@@ -1,0 +1,21 @@
+<svg width="1024" height="500" viewBox="0 0 1024 500" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1024" height="500" fill="#020617"/>
+  <defs>
+    <linearGradient id="feat-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0F172A"/>
+      <stop offset="100%" stop-color="#020617"/>
+    </linearGradient>
+  </defs>
+  
+  <rect width="1024" height="500" fill="url(#feat-grad)"/>
+  <circle cx="900" cy="100" r="200" fill="#3B82F6" opacity="0.1"/>
+  <circle cx="100" cy="400" r="150" fill="#10B981" opacity="0.1"/>
+
+  <g transform="translate(512, 220)">
+    <text text-anchor="middle" fill="#FFFFFF" font-family="sans-serif" font-weight="900" font-size="100" font-style="italic">WALL GO <tspan fill="#3B82F6">AI</tspan></text>
+    <text y="70" text-anchor="middle" fill="#94A3B8" font-family="sans-serif" font-weight="700" font-size="28" letter-spacing="10">NEON STRATEGY BATTLE</text>
+  </g>
+
+  <rect x="362" y="350" width="300" height="60" rx="30" fill="#3B82F6" opacity="0.2" stroke="#3B82F6" stroke-width="2"/>
+  <text x="512" y="388" text-anchor="middle" fill="#3B82F6" font-family="sans-serif" font-weight="900" font-size="20">2-4 PLAYERS • ADAPTIVE AI</text>
+</svg>

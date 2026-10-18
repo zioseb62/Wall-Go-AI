@@ -1,0 +1,38 @@
+<svg width="1920" height="1080" viewBox="0 0 1920 1080" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1920" height="1080" fill="#020617"/>
+  <defs>
+    <linearGradient id="pc-bg-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0F172A"/>
+      <stop offset="100%" stop-color="#020617"/>
+    </linearGradient>
+    <radialGradient id="glow-blue" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#3B82F6" stop-opacity="0.15"/>
+      <stop offset="100%" stop-color="#3B82F6" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glow-emerald" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#10B981" stop-opacity="0.1"/>
+      <stop offset="100%" stop-color="#10B981" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  
+  <rect width="1920" height="1080" fill="url(#pc-bg-grad)"/>
+  
+  <!-- Griglia prospettica sottile -->
+  <g opacity="0.2">
+    <path d="M0 108L1920 108M0 216L1920 216M0 324L1920 324M0 432L1920 432M0 540L1920 540M0 648L1920 648M0 756L1920 756M0 864L1920 864M0 972L1920 972" stroke="#3B82F6" stroke-width="1"/>
+    <path d="M192 0V1080M384 0V1080M576 0V1080M768 0V1080M960 0V1080M1152 0V1080M1344 0V1080M1536 0V1080M1728 0V1080" stroke="#3B82F6" stroke-width="1"/>
+  </g>
+
+  <!-- Bagliori soffusi negli angoli -->
+  <circle cx="1700" cy="200" r="600" fill="url(#glow-blue)"/>
+  <circle cx="200" cy="900" r="500" fill="url(#glow-emerald)"/>
+  
+  <!-- Elementi decorativi astratti (Mura senza testo) -->
+  <g opacity="0.4" transform="translate(1400, 600) rotate(15)">
+    <rect width="300" height="10" rx="5" fill="#3B82F6"/>
+    <rect y="40" width="200" height="10" rx="5" fill="#10B981"/>
+  </g>
+  <g opacity="0.4" transform="translate(200, 200) rotate(-15)">
+    <rect width="250" height="10" rx="5" fill="#EF4444"/>
+  </g>
+</svg>

@@ -1,0 +1,32 @@
+<svg width="1080" height="1920" viewBox="0 0 1080 1920" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1080" height="1920" fill="#020617"/>
+  <circle cx="540" cy="960" r="600" fill="#F59E0B" opacity="0.1"/>
+  
+  <text x="50%" y="200" text-anchor="middle" fill="white" font-family="Arial" font-weight="900" font-size="80" font-style="italic">OUTSMART THE AI</text>
+  <text x="50%" y="280" text-anchor="middle" fill="#F59E0B" font-family="Arial" font-weight="700" font-size="40" letter-spacing="5">ADAPTIVE GEMINI STRATEGY</text>
+
+  <g transform="translate(90, 400)">
+    <rect width="900" height="1300" rx="60" fill="#0F172A" stroke="#1E293B" stroke-width="10"/>
+    
+    <g transform="translate(50, 300)">
+      <rect width="800" height="500" rx="40" fill="#1E293B" stroke="#3B82F6" stroke-width="2"/>
+      <text x="50%" y="80" text-anchor="middle" fill="#3B82F6" font-family="Arial" font-weight="900" font-size="30" letter-spacing="2">GEMINI STRATEGIST</text>
+      <text x="50" y="180" fill="#94A3B8" font-family="Arial" font-size="28" font-style="italic">"Your blue piece at (2,3) is vulnerable."</text>
+      <text x="50" y="240" fill="#94A3B8" font-family="Arial" font-size="28" font-style="italic">"Place a wall on the East side to block"</text>
+      <text x="50" y="300" fill="#94A3B8" font-family="Arial" font-size="28" font-style="italic">"AI Ruby's expansion!"</text>
+      
+      <rect x="250" y="380" width="300" height="80" rx="20" fill="#3B82F6"/>
+      <text x="400" y="430" text-anchor="middle" fill="white" font-family="Arial" font-weight="900" font-size="30">THANKS!</text>
+    </g>
+    
+    <!-- AI Profiles -->
+    <g transform="translate(50, 900)">
+       <text x="0" y="0" fill="white" font-family="Arial" font-weight="900" font-size="32">CHALLENGE THE PERSONALITIES:</text>
+       <rect y="40" width="240" height="100" rx="20" fill="#EF4444" fill-opacity="0.2" stroke="#EF4444"/>
+       <text x="120" y="100" text-anchor="middle" fill="white" font-family="Arial" font-weight="700" font-size="24">AI RUBY</text>
+       
+       <rect x="270" y="40" width="240" height="100" rx="20" fill="#10B981" fill-opacity="0.2" stroke="#10B981"/>
+       <text x="390" y="100" text-anchor="middle" fill="white" font-family="Arial" font-weight="700" font-size="24">AI EMERALD</text>
+    </g>
+  </g>
+</svg>

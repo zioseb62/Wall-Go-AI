@@ -1,0 +1,25 @@
+<svg width="1920" height="1080" viewBox="0 0 1920 1080" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1920" height="1080" fill="#020617"/>
+  <circle cx="1600" cy="540" r="600" fill="#3B82F6" opacity="0.1"/>
+  
+  <text x="100" y="450" fill="#FFFFFF" font-family="sans-serif" font-weight="900" font-size="100">DOMINATE THE FIELD</text>
+  <text x="100" y="550" fill="#3B82F6" font-family="sans-serif" font-weight="700" font-size="45">NEON STRATEGY ON TABLET</text>
+  <rect x="100" y="630" width="600" height="4" fill="#3B82F6"/>
+  <text x="100" y="710" fill="#94A3B8" font-family="sans-serif" font-size="28">The Wall Go experience optimized for large screens.</text>
+
+  <rect x="850" y="140" width="950" height="800" rx="40" fill="#0F172A" stroke="#1E293B" stroke-width="12"/>
+  <rect x="880" y="170" width="890" height="740" rx="20" fill="#020617"/>
+  
+  <rect x="910" y="200" width="250" height="100" rx="20" fill="#1E293B" stroke="#3B82F6" stroke-width="3"/>
+  <text x="940" y="240" fill="#3B82F6" font-family="sans-serif" font-weight="900" font-size="18">PLAYER</text>
+  <text x="940" y="280" fill="#FFFFFF" font-family="sans-serif" font-weight="900" font-size="36">32 PTS</text>
+  
+  <g transform="translate(1075, 340)">
+    <rect width="500" height="500" rx="20" fill="#0F172A" stroke="#1E293B" stroke-width="2"/>
+    <path d="M71 0V500M142 0V500M213 0V500M284 0V500M355 0V500" stroke="white" stroke-opacity="0.05"/>
+    <path d="M0 71H500M0 142H500M0 213H500M0 284H500M0 355H500" stroke="white" stroke-opacity="0.05"/>
+    <path d="M142 142v142h142" stroke="#3B82F6" stroke-width="6" stroke-linecap="round" fill="none"/>
+    <circle cx="213" cy="213" r="25" fill="#3B82F6" stroke="#FFFFFF" stroke-width="3"/>
+    <circle cx="426" cy="426" r="25" fill="#EF4444"/>
+  </g>
+</svg>

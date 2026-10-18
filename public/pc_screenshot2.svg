@@ -1,0 +1,25 @@
+<svg width="1920" height="1080" viewBox="0 0 1920 1080" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1920" height="1080" fill="#020617"/>
+  <text x="960" y="100" text-anchor="middle" fill="#FFFFFF" font-family="sans-serif" font-weight="900" font-size="60">CHALLENGE UP TO 4 PLAYERS</text>
+  
+  <g transform="translate(460, 180)">
+    <rect width="1000" height="750" rx="40" fill="#0F172A" stroke="#1E293B" stroke-width="8"/>
+    <rect x="20" y="20" width="300" height="300" fill="#3B82F6" fill-opacity="0.1" rx="20"/>
+    <rect x="680" y="430" width="300" height="300" fill="#EF4444" fill-opacity="0.1" rx="20"/>
+    
+    <path d="M320 20V450M20 320h450" stroke="#3B82F6" stroke-width="10" stroke-linecap="round"/>
+    <path d="M680 300v430M530 680h450" stroke="#EF4444" stroke-width="10" stroke-linecap="round"/>
+    
+    <circle cx="150" cy="150" r="40" fill="#3B82F6"/>
+    <circle cx="850" cy="600" r="40" fill="#EF4444"/>
+    <circle cx="150" cy="600" r="40" fill="#10B981"/>
+    <circle cx="850" cy="150" r="40" fill="#F59E0B"/>
+  </g>
+
+  <rect x="1500" y="180" width="350" height="750" rx="40" fill="#0F172A" stroke="#1E293B" stroke-width="4"/>
+  <text x="1675" y="240" text-anchor="middle" fill="#94A3B8" font-family="sans-serif" font-weight="900" font-size="20">LIVE LEADERBOARD</text>
+  <text x="1540" y="320" fill="#3B82F6" font-family="sans-serif" font-weight="900" font-size="32">1. YOU: 54</text>
+  <text x="1540" y="400" fill="#EF4444" font-family="sans-serif" font-weight="900" font-size="32">2. RUBY: 36</text>
+  <text x="1540" y="480" fill="#10B981" font-family="sans-serif" font-weight="900" font-size="32">3. EMERALD: 12</text>
+  <text x="1540" y="560" fill="#F59E0B" font-family="sans-serif" font-weight="900" font-size="32">4. AMBER: 8</text>
+</svg>

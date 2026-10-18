@@ -1,0 +1,32 @@
+# Dependencies
+/node_modules
+/.pnpm-store
+
+# Build outputs
+/dist
+/build
+/out
+/.next
+
+# Android build artifacts
+/android/app/build
+/android/.gradle
+/android/build
+/android/captures
+
+# Temporary files & logs
+/*.log
+/*.txt
+/*.png
+/*.tgz
+/temp*
+/fix*.cjs
+/patch*.cjs
+/check*.ts
+/test*.ts
+/test*.cjs
+/test*.js
+
+# OS files
+.DS_Store
+Thumbs.db

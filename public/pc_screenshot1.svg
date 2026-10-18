@@ -1,0 +1,44 @@
+<svg width="1920" height="1080" viewBox="0 0 1920 1080" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1920" height="1080" fill="#020617"/>
+  <defs>
+    <linearGradient id="pc-grad1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0F172A"/>
+      <stop offset="100%" stop-color="#020617"/>
+    </linearGradient>
+    <filter id="pc-glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="5" result="blur"/>
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
+  </defs>
+  <rect width="1920" height="1080" fill="url(#pc-grad1)"/>
+  
+  <!-- UI Layout Desktop -->
+  <text x="100" y="150" fill="#3B82F6" font-family="sans-serif" font-weight="900" font-size="80" font-style="italic">WALL GO <tspan fill="#FFFFFF">PC EDITION</tspan></text>
+  
+  <g transform="translate(100, 250)">
+    <rect width="400" height="180" rx="30" fill="#1E293B" stroke="#3B82F6" stroke-width="4"/>
+    <text x="30" y="60" fill="#3B82F6" font-family="sans-serif" font-weight="900" font-size="24">YOU (PLAYER 1)</text>
+    <text x="30" y="130" fill="#FFFFFF" font-family="sans-serif" font-weight="900" font-size="64">42 <tspan font-size="24" fill="#64748B">PTS</tspan></text>
+  </g>
+
+  <g transform="translate(100, 460)">
+    <rect width="400" height="180" rx="30" fill="#1E293B" opacity="0.6"/>
+    <text x="30" y="60" fill="#EF4444" font-family="sans-serif" font-weight="900" font-size="24">RUBY AI</text>
+    <text x="30" y="130" fill="#FFFFFF" font-family="sans-serif" font-weight="900" font-size="64">28 <tspan font-size="24" fill="#64748B">PTS</tspan></text>
+  </g>
+
+  <!-- Board Centrale -->
+  <g transform="translate(800, 140)">
+    <rect width="800" height="800" rx="40" fill="#0F172A" stroke="#1E293B" stroke-width="10" filter="url(#pc-glow)"/>
+    <path d="M114 0V800M228 0V800M342 0V800M456 0V800M570 0V800M684 0V800" stroke="#FFFFFF" stroke-opacity="0.05" stroke-width="2"/>
+    <path d="M0 114H800M0 228H800M0 342H800M0 456H800M0 570H800M0 684H800" stroke="#FFFFFF" stroke-opacity="0.05" stroke-width="2"/>
+    
+    <path d="M228 228V570H456" stroke="#3B82F6" stroke-width="12" stroke-linecap="round" fill="none"/>
+    <path d="M570 114H798V342" stroke="#EF4444" stroke-width="12" stroke-linecap="round" fill="none"/>
+    
+    <circle cx="342" cy="456" r="45" fill="#3B82F6" stroke="white" stroke-width="5"/>
+    <circle cx="684" cy="228" r="45" fill="#EF4444" stroke="white" stroke-width="5"/>
+  </g>
+
+  <text x="100" y="1000" fill="#64748B" font-family="sans-serif" font-weight="700" font-size="24">OPTIMIZED FOR MOUSE &amp; KEYBOARD</text>
+</svg>

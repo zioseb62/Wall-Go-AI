@@ -1,0 +1,18 @@
+# Ignore node_modules, build outputs and heavy native folders when uploading source archive to Cloud Build / Cloud Run
+.gcloudignore
+.git
+.gitignore
+
+# Dependencies & build outputs
+node_modules/
+dist/
+build/
+out/
+.next/
+
+# Android native build directory
+android/
+
+# Media & temporary archives
+*.log
+*.tgz

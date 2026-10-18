@@ -1,0 +1,107 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: devices
+    // Document ID: {userId}
+    // Fields:
+    //   - email: string (optional) - User's Google email address
+    //   - osVersion: string (required) - The operating system version
+    //   - model: string (required) - The device model
+    //   - platform: string (required) - The platform (android, ios, web)
+    //   - lastActive: string (required) - The last time the user opened the app
+    //   - firstGamePlayedAt: string (optional) - The first time the user played a game
+    //   - lastGamePlayedAt: string (optional) - The last time the user played a game
+    //   - stats: map (optional) - Wins and losses by difficulty
+    //   - badges: map (optional) - Map of badge IDs to unlock dates
+    //   - totalScore: number (optional) - The player's total score
+    //   - userName: string (optional) - The player's chosen name
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+
+    function isValidDateString(dateStr) {
+      return dateStr is string &&
+        dateStr.matches("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}.*Z?$");
+    }
+
+    // Domain Validators
+
+    function isValidDevice() {
+      let data = request.resource.data;
+      return data.keys().hasAll(['osVersion', 'model', 'platform', 'lastActive']) &&
+             data.osVersion is string &&
+             data.model is string &&
+             data.platform is string &&
+             isValidDateString(data.lastActive) &&
+             (!('email' in data) || data.email is string) &&
+             (!('firstGamePlayedAt' in data) || isValidDateString(data.firstGamePlayedAt)) &&
+             (!('lastGamePlayedAt' in data) || isValidDateString(data.lastGamePlayedAt)) &&
+             (!('stats' in data) || data.stats is map) &&
+             (!('badges' in data) || data.badges is map) &&
+             (!('totalScore' in data) || data.totalScore is number) &&
+             (!('userName' in data) || data.userName is string) &&
+             (!('userLocation' in data) || data.userLocation is string) &&
+             (!('gamesPlayedToday' in data) || data.gamesPlayedToday is number);
+    }
+
+    function isValidLeaderboardEntry() {
+      let data = request.resource.data;
+      return data.keys().hasAll(['userName', 'totalScore']) &&
+             data.userName is string &&
+             data.totalScore is number;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /devices/{deviceId} {
+      allow read: if true;
+      allow create: if isValidDevice();
+      allow update: if isValidDevice();
+      allow delete: if true;
+    }
+
+    match /leaderboard/{deviceId} {
+      allow read: if true;
+      allow create: if isValidLeaderboardEntry();
+      allow update: if isValidLeaderboardEntry();
+      allow delete: if true;
+    }
+
+    match /daily_stats/{dateId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    match /game_invites/{inviteId} {
+      allow read: if true;
+      allow create: if true;
+      allow update: if true;
+      allow delete: if true;
+    }
+
+    match /online_rooms/{roomId} {
+      allow read: if true;
+      allow create: if true;
+      allow update: if true;
+      allow delete: if true;
+    }
+
+    match /saved_online_games/{saveId} {
+      allow read: if true;
+      allow create: if true;
+      allow update: if true;
+      allow delete: if true;
+    }
+  }
+}

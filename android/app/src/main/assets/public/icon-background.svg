@@ -1,0 +1,12 @@
+
+<svg width="108" height="108" viewBox="0 0 108 108" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="108" height="108" fill="url(#bg_grad)"/>
+  <!-- Griglia di sfondo sottile -->
+  <path d="M0 27H108M0 54H108M0 81H108M27 0V108M54 0V108M81 0V108" stroke="white" stroke-opacity="0.05" stroke-width="0.5"/>
+  <defs>
+    <linearGradient id="bg_grad" x1="0" y1="0" x2="108" y2="108" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0F172A"/>
+      <stop offset="1" stop-color="#020617"/>
+    </linearGradient>
+  </defs>
+</svg>

@@ -1,0 +1,85 @@
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-slate-950 text-slate-100;
+  }
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  @apply bg-slate-900;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  @apply bg-slate-700 rounded-full;
+}
+
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.hide-scrollbar {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}
+
+:root {
+  --bg-dark: #020617;
+  --text-light: #f8fafc;
+}
+* {
+  -webkit-tap-highlight-color: transparent;
+  outline: none;
+}
+html {
+  height: 100%;
+  height: -webkit-fill-available;
+  overflow: hidden;
+  overscroll-behavior: none;
+  background-color: var(--bg-dark);
+}
+
+body {
+  font-family: 'Inter', sans-serif;
+  background-color: var(--bg-dark);
+  color: var(--text-light);
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+  min-height: 100dvh;
+  min-height: -webkit-fill-available;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+  box-sizing: border-box;
+  padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+}
+#root {
+  height: 100%;
+  max-height: 100%;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+:fullscreen, :-webkit-full-screen {
+  background-color: #020617;
+  width: 100%;
+  height: 100%;
+}
+
+:fullscreen body, :-webkit-full-screen body,
+:fullscreen #root, :-webkit-full-screen #root {
+  min-height: 100% !important;
+  height: 100% !important;
+}
+
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }

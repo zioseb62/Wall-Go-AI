@@ -1,0 +1,6 @@
+{
+  "name": "Wall Go AI - Abstract Strategy",
+  "description": "Wall Go AI is a premium collection of 13 abstract strategy board games. Challenge an advanced AI in a sleek neon environment, master diverse mechanics from territorial control to strategic placement, and become the ultimate strategist.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,137 @@
+{
+  "entities": {
+    "UserDevice": {
+      "title": "UserDevice",
+      "description": "Stores device information and overall usage statistics for a user.",
+      "type": "object",
+      "properties": {
+        "email": {
+          "type": "string",
+          "description": "User's Google email address."
+        },
+        "osVersion": {
+          "type": "string",
+          "description": "The operating system version (e.g., Android 14)."
+        },
+        "model": {
+          "type": "string",
+          "description": "The device model."
+        },
+        "platform": {
+          "type": "string",
+          "description": "The platform (android, ios, web)."
+        },
+        "lastActive": {
+          "type": "string",
+          "format": "date-time",
+          "description": "The last time the user opened the app."
+        },
+        "firstGamePlayedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "The first time the user played a game."
+        },
+        "lastGamePlayedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "The last time the user played a game."
+        },
+        "stats": {
+          "type": "object",
+          "description": "Wins and losses by difficulty.",
+          "properties": {
+            "normale": {
+              "type": "object",
+              "properties": {
+                "wins": { "type": "number" },
+                "losses": { "type": "number" }
+              }
+            },
+            "difficile": {
+              "type": "object",
+              "properties": {
+                "wins": { "type": "number" },
+                "losses": { "type": "number" }
+              }
+            }
+          }
+        },
+        "badges": {
+          "type": "object",
+          "description": "Map of badge IDs to unlock dates."
+        },
+        "totalScore": {
+          "type": "number",
+          "description": "The player's total score."
+        },
+        "userName": {
+          "type": "string",
+          "description": "The player's chosen name."
+        }
+      },
+      "required": ["osVersion", "model", "platform", "lastActive"]
+    },
+    "LeaderboardEntry": {
+      "title": "LeaderboardEntry",
+      "description": "Public leaderboard entry for a user.",
+      "type": "object",
+      "properties": {
+        "userName": {
+          "type": "string",
+          "description": "The player's chosen name."
+        },
+        "totalScore": {
+          "type": "number",
+          "description": "The player's total score."
+        }
+      },
+      "required": ["userName", "totalScore"]
+    },
+    "GameInvite": {
+      "title": "GameInvite",
+      "description": "Real-time game match invitation between two online devices.",
+      "type": "object",
+      "properties": {
+        "fromDeviceId": { "type": "string" },
+        "fromName": { "type": "string" },
+        "fromLocation": { "type": "string" },
+        "toDeviceId": { "type": "string" },
+        "toName": { "type": "string" },
+        "gameMode": { "type": "string" },
+        "status": { "type": "string" },
+        "roomId": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["fromDeviceId", "toDeviceId", "gameMode", "status"]
+    },
+    "OnlineRoom": {
+      "title": "OnlineRoom",
+      "description": "Active online multiplayer game room.",
+      "type": "object",
+      "properties": {
+        "roomId": { "type": "string" },
+        "gameMode": { "type": "string" },
+        "status": { "type": "string" }
+      },
+      "required": ["roomId", "gameMode", "status"]
+    }
+  },
+  "firestore": {
+    "/devices/{userId}": {
+      "schema": { "$ref": "#/entities/UserDevice" },
+      "description": "Stores user device profiles."
+    },
+    "/leaderboard/{userId}": {
+      "schema": { "$ref": "#/entities/LeaderboardEntry" },
+      "description": "Stores public leaderboard entries."
+    },
+    "/game_invites/{inviteId}": {
+      "schema": { "$ref": "#/entities/GameInvite" },
+      "description": "Real-time game invitations."
+    },
+    "/online_rooms/{roomId}": {
+      "schema": { "$ref": "#/entities/OnlineRoom" },
+      "description": "Active online multiplayer game rooms."
+    }
+  }
+}

@@ -1,0 +1,11 @@
+
+  <svg width="2732" height="2732" viewBox="0 0 2732 2732" xmlns="http://www.w3.org/2000/svg">
+    <rect width="2732" height="2732" fill="#020617"/>
+    <g transform="translate(1110, 1110) scale(1)">
+      <!-- icon centered -->
+      <g transform="scale(1)">
+        <path d="M160 180v152l96-76l96 76V180" stroke="#3B82F6" stroke-width="24" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+        <circle cx="256" cy="200" r="25" fill="#EF4444"/>
+      </g>
+    </g>
+  </svg>

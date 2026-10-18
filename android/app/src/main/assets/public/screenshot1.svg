@@ -1,0 +1,50 @@
+<svg width="1080" height="1920" viewBox="0 0 1080 1920" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg-grad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#0F172A"/>
+      <stop offset="100%" stop-color="#020617"/>
+    </linearGradient>
+    <filter id="neon" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
+  </defs>
+  <rect width="1080" height="1920" fill="url(#bg-grad)"/>
+  <circle cx="540" cy="960" r="600" fill="#3B82F6" opacity="0.1"/>
+  
+  <text x="540" y="200" text-anchor="middle" fill="#FFFFFF" font-family="sans-serif" font-weight="900" font-size="80">MASTER THE GRID</text>
+  <text x="540" y="280" text-anchor="middle" fill="#3B82F6" font-family="sans-serif" font-weight="700" font-size="40">PURE NEON STRATEGY</text>
+
+  <rect x="90" y="400" width="900" height="1300" rx="60" fill="#0F172A" stroke="#1E293B" stroke-width="10"/>
+  
+  <rect x="140" y="450" width="380" height="150" rx="30" fill="#1E293B" stroke="#3B82F6" stroke-width="3"/>
+  <text x="170" y="500" fill="#3B82F6" font-family="sans-serif" font-weight="900" font-size="24">YOU</text>
+  <text x="170" y="550" fill="#FFFFFF" font-family="sans-serif" font-weight="900" font-size="48">24 PTS</text>
+  
+  <rect x="560" y="450" width="380" height="150" rx="30" fill="#1E293B" opacity="0.5"/>
+  <text x="590" y="500" fill="#EF4444" font-family="sans-serif" font-weight="900" font-size="24">AI RUBY</text>
+  <text x="590" y="550" fill="#FFFFFF" font-family="sans-serif" font-weight="900" font-size="48">18 PTS</text>
+
+  <!-- High-fidelity Board Representation -->
+  <g transform="translate(140, 650)">
+    <rect width="800" height="800" rx="40" fill="#020617" stroke="#1E293B" stroke-width="4"/>
+    <!-- Grid Cells -->
+    <g opacity="0.6">
+      <rect x="10" y="10" width="102" height="102" rx="10" fill="#0F172A" />
+      <rect x="122" y="10" width="102" height="102" rx="10" fill="#0F172A" />
+      <rect x="234" y="10" width="102" height="102" rx="10" fill="#0F172A" />
+      <!-- (truncated for clarity, using visual pattern) -->
+      <path d="M10 122H790M10 234H790M10 346H790M10 458H790M10 570H790M10 682H790" stroke="#FFFFFF" stroke-opacity="0.05"/>
+    </g>
+    
+    <!-- Neon Walls -->
+    <g filter="url(#neon)">
+      <path d="M234 234V458H458" stroke="#3B82F6" stroke-width="8" stroke-linecap="round" fill="none"/>
+      <path d="M570 122H790V346" stroke="#EF4444" stroke-width="8" stroke-linecap="round" fill="none"/>
+    </g>
+
+    <!-- Pieces -->
+    <circle cx="290" cy="346" r="40" fill="#3B82F6" stroke="#FFFFFF" stroke-width="4"/>
+    <circle cx="682" cy="234" r="40" fill="#EF4444" stroke="#FFFFFF" stroke-width="2"/>
+  </g>
+</svg>
