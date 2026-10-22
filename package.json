@@ -1,7 +1,7 @@
 {
   "name": "wall-go-ai",
   "private": true,
-  "version": "2.21.04",
+  "version": "2.21.06",
   "main": "dist/server.cjs",
   "type": "module",
   "scripts": {

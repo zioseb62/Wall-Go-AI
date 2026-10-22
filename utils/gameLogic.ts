@@ -24,7 +24,7 @@ export const removeWall = (walls: Wall[], r1: number, c1: number, r2: number, c2
 
 export const isValidFugaWall = (preview: { r: number, c: number, orientation: 'h'|'v' }, walls: Wall[], players: Player[], theme: BoardTheme): boolean => {
   const { r, c, orientation } = preview;
-  const boardSize = theme === 'corsa' ? 9 : GRID_SIZE;
+  const boardSize = 9; // Quoridor is strictly 9x9
   if (r < 0 || c < 0 || r >= boardSize - 1 || c >= boardSize - 1) return false;
 
   let w1Id, w2Id;
@@ -44,13 +44,11 @@ export const isValidFugaWall = (preview: { r: number, c: number, orientation: 'h
 
   if (walls.some(w => w.id === w1Id || w.id === w2Id)) return false;
 
-  // Ideally, you'd also check if the path is entirely blocked for ANY player here.
-  // Fuga rule: you cannot completely trap a player.
-  // Doing a quick pass for all players:
+  // Strict Quoridor rule: placing this wall must NEVER completely block any player from reaching their goal line
   const mockWalls = [...walls, { id: w1Id, ownerId: 1 as PlayerId }, { id: w2Id, ownerId: 1 as PlayerId }];
   for (const player of players) {
     if (player.positions.length > 0) {
-      if (!hasPathToGoal(player.positions[0], player.id, mockWalls, players, theme)) {
+      if (!hasPathToGoal(player.positions[0], player.id, mockWalls, players, 'corsa')) {
         return false;
       }
     }
@@ -440,10 +438,10 @@ export const hasPathToGoal = (start: Point, playerId: PlayerId, walls: Wall[], a
   const visited = new Set<string>();
   visited.add(`${start.r},${start.c}`);
 
-  // In Corsa mode, players don't block pathfinding for winning checks, 
-  // because players can jump over each other.
-  // Actually, wait, even if they couldn't, players are transient obstacles.
-  
+  // In Corsa (Quoridor) mode, players don't block pathfinding for winning checks
+  // and the board is always 9x9.
+  const effectiveTheme: BoardTheme = 'corsa';
+
   while (queue.length > 0) {
     const pos = queue.shift()!;
     
@@ -453,11 +451,11 @@ export const hasPathToGoal = (start: Point, playerId: PlayerId, walls: Wall[], a
     if (playerId === 3 && pos.c === 8) return true;
     if (playerId === 4 && pos.c === 0) return true;
 
-    const neighbors = getNeighbors(pos.r, pos.c, theme);
+    const neighbors = getNeighbors(pos.r, pos.c, effectiveTheme);
 
     for (const n of neighbors) {
       const nr = n[0], nc = n[1];
-      if (isValidCell(nr, nc, theme) && !hasWall(walls, pos.r, pos.c, nr, nc)) {
+      if (isValidCell(nr, nc, effectiveTheme) && !hasWall(walls, pos.r, pos.c, nr, nc)) {
         const nKey = `${nr},${nc}`;
         if (!visited.has(nKey)) {
           visited.add(nKey);
@@ -560,6 +558,18 @@ export const calculateTerritory = (
   const scores = {} as Record<PlayerId, number>;
   const enclosed = {} as Record<PlayerId, boolean>;
   const territoryMap: Record<string, PlayerId> = {};
+  
+  // Quoridor (corsa) is a race game, NOT a territory enclosure game.
+  // There are no territories, no enclosures, and no territory coloring in Quoridor.
+  if (theme === 'corsa') {
+    return {
+      scores: { 1: 0, 2: 0, 3: 0, 4: 0 } as Record<PlayerId, number>,
+      enclosed: { 1: false, 2: false, 3: false, 4: false } as Record<PlayerId, boolean>,
+      territoryMap: {} as Record<string, PlayerId>,
+      isSettled: false,
+      hexWinner: null
+    };
+  }
   
   const deadStones = deadStonesInput instanceof Set 
     ? deadStonesInput 

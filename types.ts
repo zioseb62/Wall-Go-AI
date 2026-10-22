@@ -77,10 +77,12 @@ export interface PlayerStats {
   totalShobuScore?: number;
   totalYinshScore?: number;
   totalOnitamaScore?: number;
+  totalBadukScore?: number;
   totalStrategoScore?: number;
   yinshStats?: any;
   shobuStats?: any;
   onitamaStats?: any;
+  badukStats?: any;
   strategoStats?: any;
   unlockedModes?: GameMode[];
   freeUnlockedModes?: GameMode[];

@@ -781,6 +781,7 @@ useEffect(() => {
         totalOnitamaScore: targetStats.totalOnitamaScore || 0,
         totalOrbitoScore: targetStats.totalOrbitoScore || 0,
         totalBadukScore: targetStats.totalBadukScore || 0,
+        totalStrategoScore: targetStats.totalStrategoScore || 0,
         totalOnlineMatches: targetStats.totalOnlineMatches || 0,
         unlockedModes: targetStats.unlockedModes || [],
         version: APP_VERSION
@@ -835,8 +836,9 @@ useEffect(() => {
       const onitamaGames = calcGamesObj(targetStats.onitamaStats);
       const orbitoGames = calcGamesObj(targetStats.orbitoStats);
       const badukGames = calcGamesObj(targetStats.badukStats);
+      const strategoGames = calcGamesObj(targetStats.strategoStats);
 
-      const totalGamesOverall = baseGames + corsaGames + amazonsGames + domineeringGames + abaloneGames + hexGames + chainTriangleGames + penteGames + shobuGames + yinshGames + onitamaGames + orbitoGames + badukGames;
+      const totalGamesOverall = baseGames + corsaGames + amazonsGames + domineeringGames + abaloneGames + hexGames + chainTriangleGames + penteGames + shobuGames + yinshGames + onitamaGames + orbitoGames + badukGames + strategoGames;
 
       const pointsSpent = calculatePointsSpent(targetStats.unlockedModes || [], targetUserName, targetUserLocation, targetStats.freeUnlockedModes || []);
 
@@ -853,7 +855,8 @@ useEffect(() => {
         (targetStats.totalYinshScore || 0) +
         (targetStats.totalOnitamaScore || 0) +
         (targetStats.totalOrbitoScore || 0) +
-        (targetStats.totalBadukScore || 0) - pointsSpent
+        (targetStats.totalBadukScore || 0) +
+        (targetStats.totalStrategoScore || 0) - pointsSpent
       );
 
       await setDoc(doc(db, "leaderboard", newSlug), {
@@ -871,6 +874,7 @@ useEffect(() => {
         totalOnitamaScore: targetStats.totalOnitamaScore || 0,
         totalOrbitoScore: targetStats.totalOrbitoScore || 0,
         totalBadukScore: targetStats.totalBadukScore || 0,
+        totalStrategoScore: targetStats.totalStrategoScore || 0,
         totalScoreOverall: totalScoreOverall,
         totalGamesOverall: totalGamesOverall,
         totalGamesTarget: {
@@ -887,6 +891,7 @@ useEffect(() => {
           onitama: onitamaGames,
           orbito: orbitoGames,
           baduk: badukGames,
+          stratego: strategoGames,
         },
         lastActive: now,
       }, { merge: true });
@@ -985,6 +990,7 @@ useEffect(() => {
                   totalOnitamaScore: data.totalOnitamaScore || 0,
                   totalOrbitoScore: data.totalOrbitoScore || 0,
                   totalBadukScore: data.totalBadukScore || 0,
+                  totalStrategoScore: data.totalStrategoScore || 0,
                   totalOnlineMatches: data.totalOnlineMatches || 0,
                   unlockedModes: data.unlockedModes || ["dominio"],
                   freeUnlockedModes: data.freeUnlockedModes || ["dominio"],
@@ -1346,12 +1352,13 @@ useEffect(() => {
     const currentYinsh = stats.totalYinshScore || 0;
     const currentOnitama = stats.totalOnitamaScore || 0;
     const currentBaduk = stats.totalBadukScore || 0;
+    const currentStratego = stats.totalStrategoScore || 0;
 
     const pointsSpent = calculatePointsSpent(stats.unlockedModes, userName, userLocation, stats.freeUnlockedModes);
     const globalScore = Number(
       Math.max(
         0,
-        currentAbalone + currentHex + currentFuga + currentAmazons + currentDomineering + currentWallGo + currentOrbito + currentPente + currentShobu + currentChainTriangle + currentYinsh + currentOnitama + currentBaduk - pointsSpent
+        currentAbalone + currentHex + currentFuga + currentAmazons + currentDomineering + currentWallGo + currentOrbito + currentPente + currentShobu + currentChainTriangle + currentYinsh + currentOnitama + currentBaduk + currentStratego - pointsSpent
       ).toFixed(1)
     );
 
@@ -2443,6 +2450,7 @@ useEffect(() => {
                 let maxYinshScore = 0;
                 let maxOnitamaScore = 0;
                 let maxBadukScore = 0;
+                let maxStrategoScore = 0;
                 let maxOverallLeaderboardScore = 0;
 
                 devicesSnap.forEach((d) => {
@@ -2465,6 +2473,7 @@ useEffect(() => {
                   if (typeof data.totalYinshScore === "number") maxYinshScore = Math.max(maxYinshScore, data.totalYinshScore);
                   if (typeof data.totalOnitamaScore === "number") maxOnitamaScore = Math.max(maxOnitamaScore, data.totalOnitamaScore);
                   if (typeof data.totalBadukScore === "number") maxBadukScore = Math.max(maxBadukScore, data.totalBadukScore);
+                  if (typeof data.totalStrategoScore === "number") maxStrategoScore = Math.max(maxStrategoScore, data.totalStrategoScore);
                   if (typeof data.totalScoreOverall === "number") maxOverallLeaderboardScore = Math.max(maxOverallLeaderboardScore, data.totalScoreOverall);
 
                   const lastActiveStr = data.lastActive || data.lastGamePlayedAt;
@@ -2549,6 +2558,7 @@ useEffect(() => {
                       if (typeof lbData.totalYinshScore === "number") maxYinshScore = Math.max(maxYinshScore, lbData.totalYinshScore);
                       if (typeof lbData.totalOnitamaScore === "number") maxOnitamaScore = Math.max(maxOnitamaScore, lbData.totalOnitamaScore);
                       if (typeof lbData.totalBadukScore === "number") maxBadukScore = Math.max(maxBadukScore, lbData.totalBadukScore);
+                      if (typeof lbData.totalStrategoScore === "number") maxStrategoScore = Math.max(maxStrategoScore, lbData.totalStrategoScore);
                       if (typeof lbData.totalScoreOverall === "number") maxOverallLeaderboardScore = Math.max(maxOverallLeaderboardScore, lbData.totalScoreOverall);
                     }
                   });
@@ -2572,6 +2582,7 @@ useEffect(() => {
                   restoredStats.totalYinshScore = maxYinshScore;
                   restoredStats.totalOnitamaScore = maxOnitamaScore;
                   restoredStats.totalBadukScore = maxBadukScore;
+                  restoredStats.totalStrategoScore = maxStrategoScore;
 
                   if (mostRecentData.lastGamePlayedAt)
                     restoredStats.lastGamePlayedAt = mostRecentData.lastGamePlayedAt;
@@ -2632,7 +2643,7 @@ useEffect(() => {
                   if (mostRecentData["stats4.difficile.wins"] !== undefined) restoredStats[4].hardWins = mostRecentData["stats4.difficile.wins"];
 
                   const spent = calculatePointsSpent(restoredStats.unlockedModes || [], savedName, savedLocation, restoredStats.freeUnlockedModes || []);
-                  const curSum = (restoredStats.totalScore || 0) + (restoredStats.totalFugaScore || 0) + (restoredStats.totalAmazonsScore || 0) + (restoredStats.totalDomineeringScore || 0) + (restoredStats.totalAbaloneScore || 0) + (restoredStats.totalHexScore || 0) + (restoredStats.totalChainTriangleScore || 0) + (restoredStats.totalOrbitoScore || 0) + (restoredStats.totalPenteScore || 0) + (restoredStats.totalShobuScore || 0) + (restoredStats.totalYinshScore || 0) + (restoredStats.totalOnitamaScore || 0) + (restoredStats.totalBadukScore || 0) - spent;
+                  const curSum = (restoredStats.totalScore || 0) + (restoredStats.totalFugaScore || 0) + (restoredStats.totalAmazonsScore || 0) + (restoredStats.totalDomineeringScore || 0) + (restoredStats.totalAbaloneScore || 0) + (restoredStats.totalHexScore || 0) + (restoredStats.totalChainTriangleScore || 0) + (restoredStats.totalOrbitoScore || 0) + (restoredStats.totalPenteScore || 0) + (restoredStats.totalShobuScore || 0) + (restoredStats.totalYinshScore || 0) + (restoredStats.totalOnitamaScore || 0) + (restoredStats.totalBadukScore || 0) + (restoredStats.totalStrategoScore || 0) - spent;
                   if (maxOverallLeaderboardScore > curSum) {
                     restoredStats.totalScore = (restoredStats.totalScore || 0) + (maxOverallLeaderboardScore - curSum);
                   }
@@ -2659,9 +2670,10 @@ useEffect(() => {
                     if (maxYinshScore > (newStats.totalYinshScore || 0)) { newStats.totalYinshScore = maxYinshScore; changed = true; }
                     if (maxOnitamaScore > (newStats.totalOnitamaScore || 0)) { newStats.totalOnitamaScore = maxOnitamaScore; changed = true; }
                     if (maxBadukScore > (newStats.totalBadukScore || 0)) { newStats.totalBadukScore = maxBadukScore; changed = true; }
+                    if (maxStrategoScore > (newStats.totalStrategoScore || 0)) { newStats.totalStrategoScore = maxStrategoScore; changed = true; }
 
                     const spent = calculatePointsSpent(newStats.unlockedModes || [], savedName, savedLocation, newStats.freeUnlockedModes || []);
-                    const curSum = (newStats.totalScore || 0) + (newStats.totalFugaScore || 0) + (newStats.totalAmazonsScore || 0) + (newStats.totalDomineeringScore || 0) + (newStats.totalAbaloneScore || 0) + (newStats.totalHexScore || 0) + (newStats.totalChainTriangleScore || 0) + (newStats.totalOrbitoScore || 0) + (newStats.totalPenteScore || 0) + (newStats.totalShobuScore || 0) + (newStats.totalYinshScore || 0) + (newStats.totalOnitamaScore || 0) + (newStats.totalBadukScore || 0) - spent;
+                    const curSum = (newStats.totalScore || 0) + (newStats.totalFugaScore || 0) + (newStats.totalAmazonsScore || 0) + (newStats.totalDomineeringScore || 0) + (newStats.totalAbaloneScore || 0) + (newStats.totalHexScore || 0) + (newStats.totalChainTriangleScore || 0) + (newStats.totalOrbitoScore || 0) + (newStats.totalPenteScore || 0) + (newStats.totalShobuScore || 0) + (newStats.totalYinshScore || 0) + (newStats.totalOnitamaScore || 0) + (newStats.totalBadukScore || 0) + (newStats.totalStrategoScore || 0) - spent;
                     if (maxOverallLeaderboardScore > curSum) {
                       newStats.totalScore = (newStats.totalScore || 0) + (maxOverallLeaderboardScore - curSum);
                       changed = true;
@@ -4209,7 +4221,7 @@ useEffect(() => {
           ? p.positions.filter(pos => !gameState.badukDeadStones!.includes(`${pos.r},${pos.c}`)).length
           : p.positions.length;
         const newScore =
-          gameState.gameMode === "abalone" || gameState.gameMode === "chain_triangle" || gameState.gameMode === "shobu" || gameState.gameMode === "yinsh"
+          gameState.gameMode === "abalone" || gameState.gameMode === "chain_triangle" || gameState.gameMode === "shobu" || gameState.gameMode === "yinsh" || gameState.gameMode === "corsa"
             ? p.score || 0
             : gameState.gameMode === "baduk"
               ? (territory.scores[p.id] || 0) + aliveStones + (p.id !== gameState.players[gameState.startingPlayerIndex || 0]?.id ? 7.5 : 0)
@@ -4227,15 +4239,16 @@ useEffect(() => {
           oldPlayer &&
           newScore > (oldPlayer.score || 0) &&
           gameState.gameMode !== "abalone" &&
-          gameState.gameMode !== "baduk"
+          gameState.gameMode !== "baduk" &&
+          gameState.gameMode !== "corsa"
         ) {
           territoryCreated = true;
         }
         return {
           ...p,
           score: newScore,
-          isEnclosed: territory.enclosed[p.id],
-          isTrapped: !canPlayerMove(
+          isEnclosed: gameState.gameMode === "corsa" ? false : territory.enclosed[p.id],
+          isTrapped: gameState.gameMode === "corsa" ? false : !canPlayerMove(
             p,
             updatedWalls,
             updatedPlayers,
@@ -4245,7 +4258,7 @@ useEffect(() => {
         };
       });
 
-      if (territoryCreated && sfxVolume > 0 && gameState.gameMode !== "pente" && gameState.gameMode !== "shobu" && gameState.gameMode !== "yinsh") {
+      if (territoryCreated && sfxVolume > 0 && gameState.gameMode !== "pente" && gameState.gameMode !== "shobu" && gameState.gameMode !== "yinsh" && gameState.gameMode !== "corsa") {
         SoundManager.playTerritoryCreated();
       }
       
@@ -5056,7 +5069,7 @@ useEffect(() => {
           status: "ended",
           turnCount: prev.turnCount + 1,
           lastMovedPlayerId: gameState.players[gameState.currentPlayerIndex]?.id,
-          territoryMap: territory.territoryMap,
+          territoryMap: prev.gameMode === "corsa" ? {} : territory.territoryMap,
           consecutivePasses: nextPassCount,
           matchResult: { pointsEarned: finalPointsEarned, earnedBadges },
           ...(updatedYinshState && { yinshState: updatedYinshState }),
@@ -5807,7 +5820,7 @@ useEffect(() => {
               ? "setup"
               : "moving",
           selectedPieceIndex: null,
-          territoryMap: territory.territoryMap,
+          territoryMap: prev.gameMode === "corsa" ? {} : territory.territoryMap,
           usedWallbreakerThisTurn: false,
           consecutivePasses: nextPassCount,
           moveBackupPos: null,
@@ -7631,23 +7644,27 @@ useEffect(() => {
                   if (gameState.gameMode === "corsa") {
                     if (act.fugaWallTarget) {
                       const { r, c, orientation } = act.fugaWallTarget;
-                      let w1Id, w2Id;
-                      if (orientation === "h") {
-                        w1Id = serializeWall(r, c, r + 1, c);
-                        w2Id = serializeWall(r, c + 1, r + 1, c + 1);
+                      if (!isValidFugaWall({ r, c, orientation }, gameState.walls, gameState.players, "corsa")) {
+                        advanceTurn(gameState.walls, nPlayers, false);
                       } else {
-                        w1Id = serializeWall(r, c, r, c + 1);
-                        w2Id = serializeWall(r + 1, c, r + 1, c + 1);
+                        let w1Id, w2Id;
+                        if (orientation === "h") {
+                          w1Id = serializeWall(r, c, r + 1, c);
+                          w2Id = serializeWall(r, c + 1, r + 1, c + 1);
+                        } else {
+                          w1Id = serializeWall(r, c, r, c + 1);
+                          w2Id = serializeWall(r + 1, c, r + 1, c + 1);
+                        }
+                        advanceTurn(
+                          [
+                            ...gameState.walls,
+                            { id: w1Id, ownerId: p.id },
+                            { id: w2Id, ownerId: p.id },
+                          ],
+                          nPlayers,
+                          false,
+                        );
                       }
-                      advanceTurn(
-                        [
-                          ...gameState.walls,
-                          { id: w1Id, ownerId: p.id },
-                          { id: w2Id, ownerId: p.id },
-                        ],
-                        nPlayers,
-                        false,
-                      );
                     } else {
                       advanceTurn(gameState.walls, nPlayers, false);
                     }
@@ -7732,23 +7749,27 @@ useEffect(() => {
                 if (gameState.gameMode === "corsa") {
                   if (act.fugaWallTarget) {
                     const { r, c, orientation } = act.fugaWallTarget;
-                    let w1Id, w2Id;
-                    if (orientation === "h") {
-                      w1Id = serializeWall(r, c, r + 1, c);
-                      w2Id = serializeWall(r, c + 1, r + 1, c + 1);
+                    if (!isValidFugaWall({ r, c, orientation }, gameState.walls, gameState.players, "corsa")) {
+                      advanceTurn(gameState.walls, nPlayers, false);
                     } else {
-                      w1Id = serializeWall(r, c, r, c + 1);
-                      w2Id = serializeWall(r + 1, c, r + 1, c + 1);
+                      let w1Id, w2Id;
+                      if (orientation === "h") {
+                        w1Id = serializeWall(r, c, r + 1, c);
+                        w2Id = serializeWall(r, c + 1, r + 1, c + 1);
+                      } else {
+                        w1Id = serializeWall(r, c, r, c + 1);
+                        w2Id = serializeWall(r + 1, c, r + 1, c + 1);
+                      }
+                      advanceTurn(
+                        [
+                          ...gameState.walls,
+                          { id: w1Id, ownerId: p.id },
+                          { id: w2Id, ownerId: p.id },
+                        ],
+                        nPlayers,
+                        false,
+                      );
                     }
-                    advanceTurn(
-                      [
-                        ...gameState.walls,
-                        { id: w1Id, ownerId: p.id },
-                        { id: w2Id, ownerId: p.id },
-                      ],
-                      nPlayers,
-                      false,
-                    );
                   } else {
                     advanceTurn(gameState.walls, nPlayers, false);
                   }
@@ -9351,6 +9372,15 @@ useEffect(() => {
                         {language === "it" ? "da posizionare" : "to place"}
                       </span>
                     </div>
+                  ) : gameMode === "corsa" ? (
+                    <div className="flex items-end gap-1">
+                      <span className="text-2xl font-black leading-none">
+                        {p.wallsLeft ?? 0}
+                      </span>
+                      <span className="text-[8px] font-bold text-slate-500 uppercase">
+                        {language === "it" ? "muri" : "walls"}
+                      </span>
+                    </div>
                   ) : (
                     <div className="flex items-end gap-1">
                       <span className="text-2xl font-black leading-none">
@@ -10731,6 +10761,20 @@ useEffect(() => {
                               return;
                             const { r, c, orientation } =
                               gameState.fugaWallPreview;
+                            if (
+                              !isValidFugaWall(
+                                { r, c, orientation },
+                                gameState.walls,
+                                gameState.players,
+                                "corsa",
+                              )
+                            ) {
+                              setGameState((prev) => ({
+                                ...prev,
+                                fugaWallPreview: null,
+                              }));
+                              return;
+                            }
                             let w1Id, w2Id;
                             if (orientation === "h") {
                               w1Id = serializeWall(r, c, r + 1, c);

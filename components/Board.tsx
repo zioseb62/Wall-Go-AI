@@ -531,7 +531,7 @@ const Board: React.FC<BoardProps> = ({
       if (pId) return `${PLAYER_COLORS[pId]}`; // Solid color for hex cells occupied by players
     }
 
-    if (gameMode !== 'pente' && gameMode !== 'orbito' && gameMode !== 'abalone' && gameMode !== 'hex') {
+    if (gameMode !== 'pente' && gameMode !== 'orbito' && gameMode !== 'abalone' && gameMode !== 'hex' && gameMode !== 'corsa') {
       const ownerId = territoryMap[`${r},${c}`];
       if (ownerId) return `${PLAYER_COLORS[ownerId]}80`;
     }

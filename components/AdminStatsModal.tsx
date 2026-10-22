@@ -33,7 +33,13 @@ export const BADGE_POINTS: Record<string, number> = {
   'fuga_hard': 20,
   'amazons_hard': 20,
   'chain_triangle_medium': 10,
-  'chain_triangle_hard': 20
+  'chain_triangle_hard': 20,
+  'yinsh_master': 20,
+  'onitama_hard': 20,
+  'baduk_extreme': 30,
+  'pente_extreme': 30,
+  'domineering_extreme': 30,
+  'stratego_master': 30,
 };
 
 export const AdminStatsModal: React.FC<AdminStatsModalProps> = ({ onClose }) => {
@@ -503,6 +509,8 @@ export const AdminStatsModal: React.FC<AdminStatsModalProps> = ({ onClose }) => 
         totalShobuScore: number,
         totalYinshScore: number,
         totalOnitamaScore: number,
+        totalBadukScore: number,
+        totalStrategoScore: number,
         location: string, 
         lastActive: number, 
         originalName: string,
@@ -543,6 +551,8 @@ export const AdminStatsModal: React.FC<AdminStatsModalProps> = ({ onClose }) => 
               totalShobuScore: 0,
               totalYinshScore: 0,
               totalOnitamaScore: 0,
+              totalBadukScore: 0,
+              totalStrategoScore: 0,
               location: data.userLocation || '', 
               lastActive: 0, 
               originalName: uName,
@@ -594,6 +604,8 @@ export const AdminStatsModal: React.FC<AdminStatsModalProps> = ({ onClose }) => 
           userGroups[slug].totalShobuScore += Number(data.totalShobuScore) || 0;
           userGroups[slug].totalYinshScore += Number(data.totalYinshScore) || 0;
           userGroups[slug].totalOnitamaScore += Number(data.totalOnitamaScore) || 0;
+          userGroups[slug].totalBadukScore += Number(data.totalBadukScore) || 0;
+          userGroups[slug].totalStrategoScore += Number(data.totalStrategoScore) || 0;
           
           if (lastActiveTime > userGroups[slug].lastActive) {
             userGroups[slug].lastActive = lastActiveTime;
@@ -670,7 +682,7 @@ export const AdminStatsModal: React.FC<AdminStatsModalProps> = ({ onClose }) => 
 
         const finalScore = info.totalBaseScore + totalUniqueBadgePoints;
         const ptsSpent = getPointsSpent(info.unlockedModes, info.originalName, info.location, info.freeUnlockedModes);
-        const totalScoreOverall = Math.max(0, finalScore + info.totalFugaScore + info.totalAmazonsScore + info.totalDomineeringScore + info.totalAbaloneScore + info.totalHexScore + info.totalOrbitoScore + info.totalPenteScore + info.totalChainTriangleScore + info.totalShobuScore + info.totalYinshScore + info.totalOnitamaScore - ptsSpent);
+        const totalScoreOverall = Math.max(0, finalScore + info.totalFugaScore + info.totalAmazonsScore + info.totalDomineeringScore + info.totalAbaloneScore + info.totalHexScore + info.totalOrbitoScore + info.totalPenteScore + info.totalChainTriangleScore + info.totalShobuScore + info.totalYinshScore + info.totalOnitamaScore + info.totalBadukScore + info.totalStrategoScore - ptsSpent);
         const displayName = info.location ? `${info.originalName} (${info.location})` : info.originalName;
         const targetSlug = info.location
           ? `${info.originalName.toLowerCase().replace(/[^a-z0-9]/g, '_')}_${info.location.toLowerCase().replace(/[^a-z0-9]/g, '_')}`
@@ -690,6 +702,8 @@ export const AdminStatsModal: React.FC<AdminStatsModalProps> = ({ onClose }) => 
           totalShobuScore: info.totalShobuScore,
           totalYinshScore: info.totalYinshScore,
           totalOnitamaScore: info.totalOnitamaScore,
+          totalBadukScore: info.totalBadukScore,
+          totalStrategoScore: info.totalStrategoScore,
           totalScoreOverall: totalScoreOverall,
           lastActive: info.lastActive ? new Date(info.lastActive).toISOString() : new Date().toISOString()
         }, { merge: true });
