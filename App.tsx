@@ -758,6 +758,17 @@ useEffect(() => {
       
       const info = { osVersion: "unknown", model: navigator.userAgent, platform: "web" };
 
+      const badgesUpdate: Record<string, any> = {};
+      if (targetStats.badges && Array.isArray(targetStats.badges)) {
+        targetStats.badges.forEach((b: any) => {
+          const id = typeof b === "string" ? b : b.id;
+          badgesUpdate[id] = {
+            unlockedAt: typeof b === "object" && (b.unlockedAt || b.date) ? (b.unlockedAt || b.date) : now,
+            difficulty: typeof b === "object" && b.difficulty ? b.difficulty : "normale",
+          };
+        });
+      }
+
       await setDoc(deviceRef, {
         userName: targetUserName,
         userLocation: targetUserLocation,
@@ -784,6 +795,8 @@ useEffect(() => {
         totalStrategoScore: targetStats.totalStrategoScore || 0,
         totalOnlineMatches: targetStats.totalOnlineMatches || 0,
         unlockedModes: targetStats.unlockedModes || [],
+        freeUnlockedModes: targetStats.freeUnlockedModes || [],
+        badges: badgesUpdate,
         version: APP_VERSION
       }, { merge: true });
 
@@ -896,6 +909,7 @@ useEffect(() => {
         lastActive: now,
       }, { merge: true });
 
+      setCloudScore(totalScoreOverall);
     } catch (e) {
       console.error("Failed to sync user data to Firebase:", e);
     }
@@ -1997,17 +2011,29 @@ useEffect(() => {
           }
 
           // Score restoration for Mimmo (Misterbianco - CT) to restore his correct Wall Go points
-          const currentStoredLocation = localStorage.getItem("wallgo_user_location") || "";
+          const currentStoredLocation = localStorage.getItem("wallgo_location") || localStorage.getItem("wallgo_user_location") || "";
           if (
             (currentStoredName === "Mimmo" || currentStoredName.toLowerCase() === "mimmo") &&
             (currentStoredLocation.includes("Misterbianco") || !currentStoredLocation) &&
-            localStorage.getItem("wallgo_mimmo_fix_v598") !== "true"
+            localStorage.getItem("wallgo_mimmo_fix_v1015") !== "true"
           ) {
-            if ((parsedStats.totalScore || 0) < 598) {
-              parsedStats.totalScore = 598.0;
+            if ((parsedStats.totalScore || 0) < 1015.5) {
+              parsedStats.totalScore = 1015.5;
               statsChanged = true;
             }
-            localStorage.setItem("wallgo_mimmo_fix_v598", "true");
+            localStorage.setItem("wallgo_mimmo_fix_v1015", "true");
+          }
+
+          // Score restoration for ZioSeb (Sant'Alfio) to fix the double-counted totalScoreOverall jump (4231.3 -> 3040.5)
+          if (
+            (currentStoredName === "ZioSeb" || currentStoredName.toLowerCase() === "zioseb") &&
+            localStorage.getItem("wallgo_zioseb_fix_v22110") !== "true"
+          ) {
+            if ((parsedStats.totalScore || 0) > 1900) {
+              parsedStats.totalScore = 1849.6788842062023;
+              statsChanged = true;
+            }
+            localStorage.setItem("wallgo_zioseb_fix_v22110", "true");
           }
 
           // Score cleanup for Mimmo539 to remove illicit scores from aborted games and global glitch
@@ -2139,7 +2165,7 @@ useEffect(() => {
           }
 
           const savedVersion = localStorage.getItem("wallgo_version");
-          if (!savedVersion || savedVersion < "2.9.0") {
+          if (savedVersion && isVersionOlder(savedVersion, "2.9.0")) {
             if (parsedStats.badges && parsedStats.badges.length > 0) {
               let pointsToSubtract = 0;
               parsedStats.badges.forEach((b: any) => {
@@ -2162,7 +2188,7 @@ useEffect(() => {
             }
           }
 
-          if (!savedVersion || savedVersion < "2.8.1") {
+          if (savedVersion && isVersionOlder(savedVersion, "2.8.1")) {
             const oldNormal = {
               neon: 2, islands: 2.2, desert: 2.4, clessidra: 2.6, hourglass: 2.6, ponte: 2.8, bridge: 2.8, martello: 3.0, hammer: 3.0, arena: 3.2,
             };
@@ -2198,7 +2224,7 @@ useEffect(() => {
             statsChanged = true;
           }
 
-          if (!savedVersion || isVersionOlder(savedVersion, "2.9.2")) {
+          if (savedVersion && isVersionOlder(savedVersion, "2.9.2")) {
             if (parsedStats.badges) {
               const ponteBadge = parsedStats.badges.find((b: any) => (typeof b === "string" ? b : b.id) === "ponte");
               if (ponteBadge) {
@@ -2217,7 +2243,7 @@ useEffect(() => {
             localStorage.setItem("wallgo_sfx_volume", "100");
           }
 
-          if (!savedVersion || isVersionOlder(savedVersion, "2.18.2")) {
+          if (savedVersion && isVersionOlder(savedVersion, "2.18.2")) {
             if (parsedStats.badges) {
               ["ponte", "clessidra"].forEach(badgeToRemove => {
                 const bToRem = parsedStats.badges?.find((b: any) => (typeof b === "string" ? b : b.id) === badgeToRemove);
@@ -2642,10 +2668,11 @@ useEffect(() => {
                   if (mostRecentData["stats4.normale.losses"] !== undefined) restoredStats[4].losses = mostRecentData["stats4.normale.losses"];
                   if (mostRecentData["stats4.difficile.wins"] !== undefined) restoredStats[4].hardWins = mostRecentData["stats4.difficile.wins"];
 
-                  const spent = calculatePointsSpent(restoredStats.unlockedModes || [], savedName, savedLocation, restoredStats.freeUnlockedModes || []);
-                  const curSum = (restoredStats.totalScore || 0) + (restoredStats.totalFugaScore || 0) + (restoredStats.totalAmazonsScore || 0) + (restoredStats.totalDomineeringScore || 0) + (restoredStats.totalAbaloneScore || 0) + (restoredStats.totalHexScore || 0) + (restoredStats.totalChainTriangleScore || 0) + (restoredStats.totalOrbitoScore || 0) + (restoredStats.totalPenteScore || 0) + (restoredStats.totalShobuScore || 0) + (restoredStats.totalYinshScore || 0) + (restoredStats.totalOnitamaScore || 0) + (restoredStats.totalBadukScore || 0) + (restoredStats.totalStrategoScore || 0) - spent;
-                  if (maxOverallLeaderboardScore > curSum) {
-                    restoredStats.totalScore = (restoredStats.totalScore || 0) + (maxOverallLeaderboardScore - curSum);
+                  if (
+                    (savedName === "ZioSeb" || savedName.toLowerCase() === "zioseb") &&
+                    (restoredStats.totalScore || 0) > 1900
+                  ) {
+                    restoredStats.totalScore = 1849.6788842062023;
                   }
 
                   setStats(restoredStats);
@@ -2657,7 +2684,18 @@ useEffect(() => {
                     if (!newStats.badges) newStats.badges = [];
 
                     let changed = false;
-                    if (maxScore > (newStats.totalScore || 0)) { newStats.totalScore = maxScore; changed = true; }
+                    const effectiveMaxScore =
+                      (savedName === "ZioSeb" || savedName.toLowerCase() === "zioseb") && maxScore > 1900
+                        ? 1849.6788842062023
+                        : maxScore;
+                    if (effectiveMaxScore > (newStats.totalScore || 0)) { newStats.totalScore = effectiveMaxScore; changed = true; }
+                    if (
+                      (savedName === "ZioSeb" || savedName.toLowerCase() === "zioseb") &&
+                      (newStats.totalScore || 0) > 1900
+                    ) {
+                      newStats.totalScore = 1849.6788842062023;
+                      changed = true;
+                    }
                     if (maxFugaScore > (newStats.totalFugaScore || 0)) { newStats.totalFugaScore = maxFugaScore; changed = true; }
                     if (maxAmazonsScore > (newStats.totalAmazonsScore || 0)) { newStats.totalAmazonsScore = maxAmazonsScore; changed = true; }
                     if (maxDomineeringScore > (newStats.totalDomineeringScore || 0)) { newStats.totalDomineeringScore = maxDomineeringScore; changed = true; }
@@ -2671,13 +2709,6 @@ useEffect(() => {
                     if (maxOnitamaScore > (newStats.totalOnitamaScore || 0)) { newStats.totalOnitamaScore = maxOnitamaScore; changed = true; }
                     if (maxBadukScore > (newStats.totalBadukScore || 0)) { newStats.totalBadukScore = maxBadukScore; changed = true; }
                     if (maxStrategoScore > (newStats.totalStrategoScore || 0)) { newStats.totalStrategoScore = maxStrategoScore; changed = true; }
-
-                    const spent = calculatePointsSpent(newStats.unlockedModes || [], savedName, savedLocation, newStats.freeUnlockedModes || []);
-                    const curSum = (newStats.totalScore || 0) + (newStats.totalFugaScore || 0) + (newStats.totalAmazonsScore || 0) + (newStats.totalDomineeringScore || 0) + (newStats.totalAbaloneScore || 0) + (newStats.totalHexScore || 0) + (newStats.totalChainTriangleScore || 0) + (newStats.totalOrbitoScore || 0) + (newStats.totalPenteScore || 0) + (newStats.totalShobuScore || 0) + (newStats.totalYinshScore || 0) + (newStats.totalOnitamaScore || 0) + (newStats.totalBadukScore || 0) + (newStats.totalStrategoScore || 0) - spent;
-                    if (maxOverallLeaderboardScore > curSum) {
-                      newStats.totalScore = (newStats.totalScore || 0) + (maxOverallLeaderboardScore - curSum);
-                      changed = true;
-                    }
 
                     if (allBadges.size > 0) {
                       allBadges.forEach((b) => {
@@ -5110,6 +5141,21 @@ useEffect(() => {
                 const deviceSnap = await getDoc(deviceRef);
                 const deviceData = deviceSnap.exists() ? deviceSnap.data() : {};
 
+                // Protezione contro sovrascrittura accidentale di un punteggio cloud più alto (es. dopo ripristino da bug migrazione)
+                if (
+                  typeof deviceData.totalScore === "number" &&
+                  deviceData.totalScore > (newStats.totalScore || 0) + 10
+                ) {
+                  const isWallGoGame =
+                    !gameState.gameMode || gameState.gameMode === "dominio";
+                  newStats.totalScore = Math.max(
+                    0,
+                    deviceData.totalScore + (isWallGoGame ? scoreChange : 0)
+                  );
+                  saveStorageItem("wallgo_stats", JSON.stringify(newStats));
+                  setStats({ ...newStats });
+                }
+
                 const lastGamePlayedAt = deviceData.lastGamePlayedAt
                   ? new Date(deviceData.lastGamePlayedAt)
                   : null;
@@ -5146,6 +5192,7 @@ useEffect(() => {
                   totalYinshScore: newStats.totalYinshScore || 0,
                   totalOnitamaScore: newStats.totalOnitamaScore || 0,
                   totalOrbitoScore: newStats.totalOrbitoScore || 0,
+                  totalStrategoScore: newStats.totalStrategoScore || 0,
                   unlockedModes: newStats.unlockedModes || [],
                   userName: userName,
                   userLocation: userLocation,
@@ -5474,27 +5521,8 @@ useEffect(() => {
                   aggregatedStrategoGames = Math.max(aggregatedStrategoGames, getFlatCounts('strategoStats'));
 
 
-                  // Calcola i punti dei badge per questo dispositivo
-                  let deviceBadgePoints = 0;
-                  const deviceBadges =
-                    d.id === deviceId ? updates.badges : data.badges;
-                  if (deviceBadges) {
-                    if (Array.isArray(deviceBadges)) {
-                      deviceBadges.forEach((bData: any) => {
-                        const badgeId = typeof bData === "string" ? bData : bData.id;
-                        const bDiff = typeof bData === "object" && bData !== null ? bData.difficulty || "normale" : "normale";
-                        deviceBadgePoints += getPointsForDiff(badgeId, bDiff);
-                      });
-                    } else {
-                      Object.entries(deviceBadges).forEach(([badgeId, bData]: [string, any]) => {
-                        const bDiff = typeof bData === "object" && bData !== null ? bData.difficulty || "normale" : "normale";
-                        deviceBadgePoints += getPointsForDiff(badgeId, bDiff);
-                      });
-                    }
-                  }
-
-                  const baseScore = docScore - deviceBadgePoints;
-                  aggregatedBaseScore = Math.max(aggregatedBaseScore, baseScore);
+                  // docScore already includes badge points earned on this device; take the max across devices to avoid re-adding badge points when a device doc had missing badges
+                  aggregatedBaseScore = Math.max(aggregatedBaseScore, docScore);
                   aggregatedFugaScore = Math.max(aggregatedFugaScore, docFugaScore);
                   aggregatedAmazonsScore = Math.max(aggregatedAmazonsScore, docAmazonsScore);
                   aggregatedDomineeringScore = Math.max(aggregatedDomineeringScore, docDomineeringScore);
@@ -5529,8 +5557,10 @@ useEffect(() => {
                   totalUniqueBadgePoints += getPointsForDiff(id, diff);
                 });
 
-                const aggregatedScore =
-                  aggregatedBaseScore + totalUniqueBadgePoints;
+                const aggregatedScore = Math.max(
+                  aggregatedBaseScore,
+                  totalUniqueBadgePoints,
+                );
 
                 // Elimina i vecchi dispositivi
                 for (const idToDelete of docsToDelete) {

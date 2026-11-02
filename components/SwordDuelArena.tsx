@@ -56,6 +56,8 @@ export const SwordDuelArena: React.FC<SwordDuelArenaProps> = ({
   const [activeSparks, setActiveSparks] = useState<SparkParticle[]>([]);
   const playedAudioRef = useRef<Record<string, boolean>>({});
   const completeFiredRef = useRef<boolean>(false);
+  const onCompleteRef = useRef(onComplete);
+  onCompleteRef.current = onComplete;
 
   // Dynamic combat timings:
   // Clash 1 (~520ms): Overhead strike met with steel parry
@@ -188,7 +190,7 @@ export const SwordDuelArena: React.FC<SwordDuelArenaProps> = ({
       if (current >= 2400) {
         if (!completeFiredRef.current) {
           completeFiredRef.current = true;
-          onComplete();
+          onCompleteRef.current();
         }
         return;
       }
@@ -198,7 +200,7 @@ export const SwordDuelArena: React.FC<SwordDuelArenaProps> = ({
 
     animId = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(animId);
-  }, [clashTimings, isAttackerMiner, isDefenderBomb, onComplete, seed, unitX, unitY, battleResult.winner]);
+  }, [clashTimings, isAttackerMiner, isDefenderBomb, seed, unitX, unitY, battleResult.winner]);
 
   // Update spark physics
   useEffect(() => {

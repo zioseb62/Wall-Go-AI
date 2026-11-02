@@ -27,6 +27,329 @@ const getDistancesMap = (start: Point, walls: Wall[], theme: any): number[][] =>
   return dists;
 };
 
+// --- FAST QUORIDOR (CORSA) BITMASK & ALPHA-BETA ENGINE FOR 'ESTREMA' (DIFFICILE) ---
+const CORSA_WALL_VALUES = [0, 780, 1500, 2160, 2780, 3380, 3960, 4520, 5060, 5580, 6080];
+const corsaBfsQueue = new Int16Array(81);
+
+interface CorsaPathAnalysis {
+  dist: Int16Array;
+  shortestDist: number;
+  optimalExits: number;
+  mustBacktrack: boolean;
+  corridorBranches: number;
+}
+
+const buildCorsaEdgesMask = (walls: Wall[]): Uint8Array => {
+  const edges = new Uint8Array(81);
+  for (let i = 0; i < walls.length; i++) {
+    const id = walls[i].id;
+    const sep = id.indexOf('|');
+    if (sep === -1) continue;
+    const c1Idx = id.indexOf(',');
+    const c2Idx = id.indexOf(',', sep + 1);
+    const r1 = parseInt(id.slice(0, c1Idx), 10);
+    const c1 = parseInt(id.slice(c1Idx + 1, sep), 10);
+    const r2 = parseInt(id.slice(sep + 1, c2Idx), 10);
+    const c2 = parseInt(id.slice(c2Idx + 1), 10);
+    if (r1 < 0 || r1 >= 9 || c1 < 0 || c1 >= 9 || r2 < 0 || r2 >= 9 || c2 < 0 || c2 >= 9) continue;
+    if (r1 !== r2) {
+      const minR = r1 < r2 ? r1 : r2;
+      edges[minR * 9 + c1] |= 2; // South blocked
+      edges[(minR + 1) * 9 + c1] |= 1; // North blocked
+    } else if (c1 !== c2) {
+      const minC = c1 < c2 ? c1 : c2;
+      edges[r1 * 9 + minC] |= 8; // East blocked
+      edges[r1 * 9 + minC + 1] |= 4; // West blocked
+    }
+  }
+  return edges;
+};
+
+const canPlaceCorsaWallFast = (edges: Uint8Array, r: number, c: number, isHoriz: boolean): boolean => {
+  const idx = r * 9 + c;
+  if (isHoriz) {
+    if ((edges[idx] & 2) !== 0 || (edges[idx + 1] & 2) !== 0) return false;
+    if ((edges[idx] & 8) !== 0 && (edges[idx + 9] & 8) !== 0) return false;
+    return true;
+  } else {
+    if ((edges[idx] & 8) !== 0 || (edges[idx + 9] & 8) !== 0) return false;
+    if ((edges[idx] & 2) !== 0 && (edges[idx + 1] & 2) !== 0) return false;
+    return true;
+  }
+};
+
+const applyCorsaWallFast = (edges: Uint8Array, r: number, c: number, isHoriz: boolean): void => {
+  const idx = r * 9 + c;
+  if (isHoriz) {
+    edges[idx] |= 2;
+    edges[idx + 9] |= 1;
+    edges[idx + 1] |= 2;
+    edges[idx + 10] |= 1;
+  } else {
+    edges[idx] |= 8;
+    edges[idx + 1] |= 4;
+    edges[idx + 9] |= 8;
+    edges[idx + 10] |= 4;
+  }
+};
+
+const removeCorsaWallFast = (edges: Uint8Array, r: number, c: number, isHoriz: boolean): void => {
+  const idx = r * 9 + c;
+  if (isHoriz) {
+    edges[idx] &= ~2;
+    edges[idx + 9] &= ~1;
+    edges[idx + 1] &= ~2;
+    edges[idx + 10] &= ~1;
+  } else {
+    edges[idx] &= ~8;
+    edges[idx + 1] &= ~4;
+    edges[idx + 9] &= ~8;
+    edges[idx + 10] &= ~4;
+  }
+};
+
+const computeCorsaShortestDistFast = (posIdx: number, playerId: PlayerId, edges: Uint8Array): number => {
+  const r0 = Math.floor(posIdx / 9);
+  const c0 = posIdx % 9;
+  if ((playerId === 1 && r0 === 0) || (playerId === 2 && r0 === 8) || (playerId === 3 && c0 === 8) || (playerId === 4 && c0 === 0)) {
+    return 0;
+  }
+  const visited = new Uint8Array(81);
+  const dists = new Int16Array(81);
+  let head = 0;
+  let tail = 0;
+  corsaBfsQueue[tail++] = posIdx;
+  visited[posIdx] = 1;
+  dists[posIdx] = 0;
+
+  while (head < tail) {
+    const curr = corsaBfsQueue[head++];
+    const d = dists[curr] + 1;
+    const cr = Math.floor(curr / 9);
+    const cc = curr % 9;
+    const e = edges[curr];
+
+    // North
+    if (cr > 0 && (e & 1) === 0) {
+      const next = curr - 9;
+      if (!visited[next]) {
+        if (playerId === 1 && cr - 1 === 0) return d;
+        visited[next] = 1;
+        dists[next] = d;
+        corsaBfsQueue[tail++] = next;
+      }
+    }
+    // South
+    if (cr < 8 && (e & 2) === 0) {
+      const next = curr + 9;
+      if (!visited[next]) {
+        if (playerId === 2 && cr + 1 === 8) return d;
+        visited[next] = 1;
+        dists[next] = d;
+        corsaBfsQueue[tail++] = next;
+      }
+    }
+    // West
+    if (cc > 0 && (e & 4) === 0) {
+      const next = curr - 1;
+      if (!visited[next]) {
+        if (playerId === 4 && cc - 1 === 0) return d;
+        visited[next] = 1;
+        dists[next] = d;
+        corsaBfsQueue[tail++] = next;
+      }
+    }
+    // East
+    if (cc < 8 && (e & 8) === 0) {
+      const next = curr + 1;
+      if (!visited[next]) {
+        if (playerId === 3 && cc + 1 === 8) return d;
+        visited[next] = 1;
+        dists[next] = d;
+        corsaBfsQueue[tail++] = next;
+      }
+    }
+  }
+  return 999;
+};
+
+const analyzeCorsaPlayerPath = (posIdx: number, playerId: PlayerId, edges: Uint8Array): CorsaPathAnalysis => {
+  const dist = new Int16Array(81);
+  dist.fill(999);
+  let head = 0;
+  let tail = 0;
+
+  for (let i = 0; i < 9; i++) {
+    const gIdx = playerId === 1 ? i : playerId === 2 ? 72 + i : playerId === 3 ? i * 9 + 8 : i * 9;
+    dist[gIdx] = 0;
+    corsaBfsQueue[tail++] = gIdx;
+  }
+
+  while (head < tail) {
+    const curr = corsaBfsQueue[head++];
+    const d = dist[curr] + 1;
+    const cr = Math.floor(curr / 9);
+    const cc = curr % 9;
+    const e = edges[curr];
+
+    if (cr > 0 && (e & 1) === 0 && dist[curr - 9] === 999) {
+      dist[curr - 9] = d;
+      corsaBfsQueue[tail++] = curr - 9;
+    }
+    if (cr < 8 && (e & 2) === 0 && dist[curr + 9] === 999) {
+      dist[curr + 9] = d;
+      corsaBfsQueue[tail++] = curr + 9;
+    }
+    if (cc > 0 && (e & 4) === 0 && dist[curr - 1] === 999) {
+      dist[curr - 1] = d;
+      corsaBfsQueue[tail++] = curr - 1;
+    }
+    if (cc < 8 && (e & 8) === 0 && dist[curr + 1] === 999) {
+      dist[curr + 1] = d;
+      corsaBfsQueue[tail++] = curr + 1;
+    }
+  }
+
+  const shortestDist = dist[posIdx];
+  if (shortestDist === 0 || shortestDist >= 999) {
+    return { dist, shortestDist, optimalExits: 0, mustBacktrack: false, corridorBranches: 0 };
+  }
+
+  const pr = Math.floor(posIdx / 9);
+  const pc = posIdx % 9;
+  const pe = edges[posIdx];
+  let optimalExits = 0;
+  let hasForwardOrSideExit = false;
+
+  const checkExit = (nIdx: number, dr: number, dc: number) => {
+    if (dist[nIdx] === shortestDist - 1) {
+      optimalExits++;
+      const isBackward =
+        (playerId === 1 && dr > 0) ||
+        (playerId === 2 && dr < 0) ||
+        (playerId === 3 && dc < 0) ||
+        (playerId === 4 && dc > 0);
+      if (!isBackward) hasForwardOrSideExit = true;
+    }
+  };
+
+  if (pr > 0 && (pe & 1) === 0) checkExit(posIdx - 9, -1, 0);
+  if (pr < 8 && (pe & 2) === 0) checkExit(posIdx + 9, 1, 0);
+  if (pc > 0 && (pe & 4) === 0) checkExit(posIdx - 1, 0, -1);
+  if (pc < 8 && (pe & 8) === 0) checkExit(posIdx + 1, 0, 1);
+
+  const mustBacktrack = optimalExits > 0 && !hasForwardOrSideExit;
+
+  // Trace up to 3 steps along shortest paths to measure corridor width/branching
+  let corridorBranches = 0;
+  const seen = new Uint8Array(81);
+  let fHead = 0;
+  let fTail = 0;
+  corsaBfsQueue[fTail++] = posIdx;
+  seen[posIdx] = 1;
+
+  while (fHead < fTail) {
+    const u = corsaBfsQueue[fHead++];
+    const rem = dist[u];
+    const depthUsed = shortestDist - rem;
+    if (depthUsed >= 3 || rem === 0) continue;
+    const ur = Math.floor(u / 9);
+    const uc = u % 9;
+    const ue = edges[u];
+
+    if (ur > 0 && (ue & 1) === 0 && dist[u - 9] === rem - 1 && !seen[u - 9]) {
+      seen[u - 9] = 1;
+      corridorBranches++;
+      corsaBfsQueue[fTail++] = u - 9;
+    }
+    if (ur < 8 && (ue & 2) === 0 && dist[u + 9] === rem - 1 && !seen[u + 9]) {
+      seen[u + 9] = 1;
+      corridorBranches++;
+      corsaBfsQueue[fTail++] = u + 9;
+    }
+    if (uc > 0 && (ue & 4) === 0 && dist[u - 1] === rem - 1 && !seen[u - 1]) {
+      seen[u - 1] = 1;
+      corridorBranches++;
+      corsaBfsQueue[fTail++] = u - 1;
+    }
+    if (uc < 8 && (ue & 8) === 0 && dist[u + 1] === rem - 1 && !seen[u + 1]) {
+      seen[u + 1] = 1;
+      corridorBranches++;
+      corsaBfsQueue[fTail++] = u + 1;
+    }
+  }
+
+  return { dist, shortestDist, optimalExits, mustBacktrack, corridorBranches };
+};
+
+const getFastCorsaPawnMoves = (posIdx: number, allPositions: number[], myPlayerIndex: number, edges: Uint8Array): number[] => {
+  const moves: number[] = [];
+  const r = Math.floor(posIdx / 9);
+  const c = posIdx % 9;
+  const e = edges[posIdx];
+
+  const isOccupied = (cellIdx: number): boolean => {
+    for (let i = 0; i < allPositions.length; i++) {
+      if (i !== myPlayerIndex && allPositions[i] === cellIdx) return true;
+    }
+    return false;
+  };
+
+  // Directions: [dr, dc, bit]
+  const dirs: [number, number, number][] = [
+    [-1, 0, 1],
+    [1, 0, 2],
+    [0, -1, 4],
+    [0, 1, 8],
+  ];
+
+  for (let d = 0; d < 4; d++) {
+    const [dr, dc, bit] = dirs[d];
+    if ((e & bit) !== 0) continue;
+    const nr = r + dr;
+    const nc = c + dc;
+    if (nr < 0 || nr >= 9 || nc < 0 || nc >= 9) continue;
+    const nIdx = nr * 9 + nc;
+
+    if (!isOccupied(nIdx)) {
+      moves.push(nIdx);
+    } else {
+      // Occupied by opponent pawn: check straight jump first
+      const ne = edges[nIdx];
+      const jr = nr + dr;
+      const jc = nc + dc;
+      if (jr >= 0 && jr < 9 && jc >= 0 && jc < 9 && (ne & bit) === 0 && !isOccupied(jr * 9 + jc)) {
+        moves.push(jr * 9 + jc);
+      } else {
+        // Blocked behind opponent pawn: check diagonal jumps
+        const diagDirs: [number, number, number][] =
+          dr !== 0
+            ? [
+                [0, -1, 4],
+                [0, 1, 8],
+              ]
+            : [
+                [-1, 0, 1],
+                [1, 0, 2],
+              ];
+        for (let k = 0; k < 2; k++) {
+          const [ddr, ddc, dBit] = diagDirs[k];
+          if ((ne & dBit) !== 0) continue;
+          const diagR = nr + ddr;
+          const diagC = nc + ddc;
+          if (diagR >= 0 && diagR < 9 && diagC >= 0 && diagC < 9) {
+            const diagIdx = diagR * 9 + diagC;
+            if (!isOccupied(diagIdx)) {
+              moves.push(diagIdx);
+            }
+          }
+        }
+      }
+    }
+  }
+  return moves;
+};
+
 export const evaluateBoardState = (gameState: GameState, walls: Wall[], playerId: PlayerId, opponents_deprecated: Player[], difficulty: Difficulty): number => {
   const opponents = gameState.players.filter(p => p.id !== playerId);
   const theme = gameState.boardTheme;
@@ -59,8 +382,27 @@ export const evaluateBoardState = (gameState: GameState, walls: Wall[], playerId
         oppMinShortest = Math.min(oppMinShortest, oppShortest);
      });
 
-     if (difficulty === 'estrema' || difficulty === 'difficile') {
-        let adv = oppMinShortest - myShortest;
+     // Se chiudiamo completamente un giocatore (distanza Infinity), invalidiamo questa mossa in Corsa perché il regolamento originale di Quoridor lo vieta
+     if (myShortest === Infinity || oppAvgShortest === Infinity) {
+         return -9999999;
+     }
+
+     if (difficulty === 'estrema') {
+        // Potenziato per il nuovo livello "Difficile" (estrema)
+        if (myShortest === 0) return 1000000;
+        if (oppMinShortest === 0) return -1000000;
+        const adv = oppMinShortest - myShortest;
+        score += adv * 1000;
+        const myWalls = Math.min(10, Math.max(0, myPlayer.wallsLeft || 0));
+        const oppWalls = Math.min(10, Math.max(0, opponents[0]?.wallsLeft || 0));
+        score += (CORSA_WALL_VALUES[myWalls] - CORSA_WALL_VALUES[oppWalls]);
+        if (oppMinShortest <= 2 && adv <= 0) score -= (3 - oppMinShortest) * 800;
+        const cDist = Math.abs(myPlayer.positions[0].c - 4);
+        score -= (cDist * 10);
+     } else {
+        // Livello "Medio" (difficile) usa l'ex-Difficile (estrema); Livello "Semplice" (normale) usa l'ex-Medio (difficile)
+        const isExEstrema = difficulty === 'difficile';
+        const adv = oppMinShortest - myShortest;
         
         score -= myShortest * 2000;
         
@@ -70,40 +412,14 @@ export const evaluateBoardState = (gameState: GameState, walls: Wall[], playerId
         if (adv < 0) {
             score += adv * 5000;
         } else {
-            score += adv * (difficulty === 'estrema' ? 500 : 350);
+            score += adv * (isExEstrema ? 500 : 350);
         }
         
-        const wallValue = difficulty === 'estrema' ? 200 : 100;
+        const wallValue = isExEstrema ? 200 : 100;
         score += (myPlayer.wallsLeft || 0) * wallValue;
 
         const cDist = Math.abs(myPlayer.positions[0].c - 4);
         score -= (cDist * 10);
-        
-     } else {
-        score -= myShortest * 2000;
-        let adv = oppMinShortest - myShortest;
-        
-        if (adv < 0) {
-            score += adv * 2000;
-        } else {
-            score += adv * 50;
-        }
-        
-        score += (myPlayer.wallsLeft || 0) * 50;
-        
-        const cDist = Math.abs(myPlayer.positions[0].c - 4);
-        score -= cDist * 10;
-        
-        if (gameState.turnCount < 2) {
-           score += (Math.random() * 250);
-        } else {
-           score += (Math.random() * 20);
-        }
-     }
-     
-     // Se chiudiamo completamente un giocatore (distanza Infinity), invalidiamo questa mossa in Corsa perché il regolamento originale di Quoridor lo vieta
-     if (myShortest === Infinity || oppAvgShortest === Infinity) {
-         return -9999999;
      }
 
      return score;
@@ -502,7 +818,584 @@ export const getBestAmazonsMoveForAI = (gameState: GameState, playerId: PlayerId
   };
 };
 
+interface CorsaCandidateWall {
+  r: number;
+  c: number;
+  isHoriz: boolean;
+  priority: number;
+  netDelta: number;
+}
+
+const getBestCorsaExtremeMoveForAI = (gameState: GameState, aiPlayerId: PlayerId): AIAction | null => {
+  const players = gameState.players;
+  const aiIdx = players.findIndex(p => p.id === aiPlayerId);
+  if (aiIdx === -1 || players[aiIdx].positions.length === 0) return null;
+
+  const startPos = players[aiIdx].positions[0];
+  const edges = buildCorsaEdgesMask(gameState.walls);
+  const playerIds = players.map(p => p.id);
+  const positions = players.map(p => (p.positions.length > 0 ? p.positions[0].r * 9 + p.positions[0].c : 40));
+  const wallsLeft = players.map(p => p.wallsLeft || 0);
+  const numPlayers = players.length;
+
+  // Identify primary opponent (closest to their goal by true shortest path)
+  let primaryOppIdx = (aiIdx + 1) % numPlayers;
+  let bestOppDist = 999;
+  for (let i = 0; i < numPlayers; i++) {
+    if (i === aiIdx) continue;
+    const d = computeCorsaShortestDistFast(positions[i], playerIds[i], edges);
+    if (d < bestOppDist) {
+      bestOppDist = d;
+      primaryOppIdx = i;
+    }
+  }
+
+  const startTime = typeof performance !== 'undefined' ? performance.now() : Date.now();
+  const TIME_LIMIT_MS = 110;
+  let timeAborted = false;
+  let nodeCount = 0;
+
+  const allPlayersHavePath = (skipIdx1: number, skipIdx2: number): boolean => {
+    for (let i = 0; i < numPlayers; i++) {
+      if (i === skipIdx1 || i === skipIdx2) continue;
+      if (computeCorsaShortestDistFast(positions[i], playerIds[i], edges) >= 999) return false;
+    }
+    return true;
+  };
+
+  const evaluateState = (turnIdx: number, ply: number): number => {
+    const myAnalysis = analyzeCorsaPlayerPath(positions[aiIdx], aiPlayerId, edges);
+    if (myAnalysis.shortestDist >= 999) return -9999999;
+    if (myAnalysis.shortestDist === 0) return 1000000 - ply * 1000;
+
+    // In multiplayer (>2), consider the closest opponent
+    let targetOppIdx = primaryOppIdx;
+    let oppAnalysis = analyzeCorsaPlayerPath(positions[targetOppIdx], playerIds[targetOppIdx], edges);
+    if (oppAnalysis.shortestDist >= 999) return -9999999;
+
+    if (numPlayers > 2) {
+      for (let i = 0; i < numPlayers; i++) {
+        if (i === aiIdx || i === primaryOppIdx) continue;
+        const alt = analyzeCorsaPlayerPath(positions[i], playerIds[i], edges);
+        if (alt.shortestDist >= 999) return -9999999;
+        if (alt.shortestDist < oppAnalysis.shortestDist) {
+          oppAnalysis = alt;
+          targetOppIdx = i;
+        }
+      }
+    }
+
+    if (oppAnalysis.shortestDist === 0) return -1000000 + ply * 1000;
+
+    // Effective distance accounting for immediate pawn jumps or face-to-face blocks
+    let myEffDist = myAnalysis.shortestDist;
+    let oppEffDist = oppAnalysis.shortestDist;
+
+    const myPawnMoves = getFastCorsaPawnMoves(positions[aiIdx], positions, aiIdx, edges);
+    if (myPawnMoves.length > 0) {
+      let bestMoveDist = 999;
+      for (let i = 0; i < myPawnMoves.length; i++) {
+        const d = myAnalysis.dist[myPawnMoves[i]];
+        if (d < bestMoveDist) bestMoveDist = d;
+      }
+      if (bestMoveDist < 999) {
+        if (turnIdx === aiIdx && bestMoveDist + 1 < myEffDist) {
+          myEffDist = bestMoveDist + 1; // Immediate forward jump available on our turn!
+        } else if (bestMoveDist + 1 > myEffDist) {
+          myEffDist = bestMoveDist + 1; // Blocked by opponent pawn directly in front
+        }
+      }
+    }
+
+    const oppPawnMoves = getFastCorsaPawnMoves(positions[targetOppIdx], positions, targetOppIdx, edges);
+    if (oppPawnMoves.length > 0) {
+      let bestOppMoveDist = 999;
+      for (let i = 0; i < oppPawnMoves.length; i++) {
+        const d = oppAnalysis.dist[oppPawnMoves[i]];
+        if (d < bestOppMoveDist) bestOppMoveDist = d;
+      }
+      if (bestOppMoveDist < 999) {
+        if (turnIdx === targetOppIdx && bestOppMoveDist + 1 < oppEffDist) {
+          oppEffDist = bestOppMoveDist + 1; // Opponent has an immediate forward jump on their turn!
+        } else if (bestOppMoveDist + 1 > oppEffDist) {
+          oppEffDist = bestOppMoveDist + 1;
+        }
+      }
+    }
+
+    const isMyTurn = turnIdx === aiIdx;
+    const tempoBonus = isMyTurn ? 520 : -520;
+    const raceDiff = oppEffDist - myEffDist;
+
+    let score = raceDiff * 1000 + tempoBonus;
+
+    // Critical endgame urgency: if opponent is about to reach goal and is ahead in tempo
+    const oppWinningRace = oppEffDist < myEffDist || (oppEffDist === myEffDist && !isMyTurn);
+    const myWinningRace = myEffDist < oppEffDist || (myEffDist === oppEffDist && isMyTurn);
+
+    if (oppWinningRace) {
+      if (oppEffDist === 1) score -= 2200;
+      else if (oppEffDist === 2) score -= 1050;
+      else if (oppEffDist === 3) score -= 420;
+    } else if (myWinningRace) {
+      if (myEffDist === 1) score += 2200;
+      else if (myEffDist === 2) score += 1050;
+      else if (myEffDist === 3) score += 420;
+    }
+
+    // Wall resource conservation vs tactical expenditure
+    const myW = Math.min(10, Math.max(0, wallsLeft[aiIdx]));
+    const oppW = Math.min(10, Math.max(0, wallsLeft[targetOppIdx]));
+    let myWallWeight = 1.0;
+    if (oppWinningRace && oppEffDist <= 3) {
+      myWallWeight = 0.5; // Discount wall cost when stopping an imminent opponent win
+    } else if (oppW === 0 && myWinningRace) {
+      myWallWeight = 0.35; // Opponent has no walls left and we lead the race
+    }
+    score += CORSA_WALL_VALUES[myW] * myWallWeight - CORSA_WALL_VALUES[oppW];
+
+    // Corridor & "Hood" (back-wall) trap heuristics
+    if (oppAnalysis.mustBacktrack) {
+      score += myW > 0 ? 310 : 140;
+    }
+    if (myAnalysis.mustBacktrack) {
+      score -= oppW > 0 ? 340 : 160;
+    }
+
+    score += (myAnalysis.optimalExits - oppAnalysis.optimalExits) * 65;
+    score += (myAnalysis.corridorBranches - oppAnalysis.corridorBranches) * 28;
+
+    // Positional progress and center control tie-breakers
+    const myR = Math.floor(positions[aiIdx] / 9);
+    const myC = positions[aiIdx] % 9;
+    const rawProgress =
+      aiPlayerId === 1 ? 8 - myR : aiPlayerId === 2 ? myR : aiPlayerId === 3 ? myC : 8 - myC;
+    score += rawProgress * 18;
+    score -= Math.abs(myC - 4) * 8;
+
+    return score;
+  };
+
+  // Pre-scan at root for dangerous opponent trap walls against AI so we can prioritize anti-trap walls
+  const dangerousOppWallIntersections = new Uint8Array(64);
+  if (wallsLeft[primaryOppIdx] > 0) {
+    const baseMyDist = computeCorsaShortestDistFast(positions[aiIdx], aiPlayerId, edges);
+    const baseOppDist = computeCorsaShortestDistFast(positions[primaryOppIdx], playerIds[primaryOppIdx], edges);
+    for (let r = 0; r < 8; r++) {
+      for (let c = 0; c < 8; c++) {
+        for (let orient = 0; orient < 2; orient++) {
+          const isHoriz = orient === 0;
+          if (!canPlaceCorsaWallFast(edges, r, c, isHoriz)) continue;
+          applyCorsaWallFast(edges, r, c, isHoriz);
+          const newMyDist = computeCorsaShortestDistFast(positions[aiIdx], aiPlayerId, edges);
+          const newOppDist = computeCorsaShortestDistFast(positions[primaryOppIdx], playerIds[primaryOppIdx], edges);
+          removeCorsaWallFast(edges, r, c, isHoriz);
+          if (newMyDist < 999 && newOppDist < 999) {
+            const dmgToMe = (newMyDist - baseMyDist) - (newOppDist - baseOppDist);
+            if (dmgToMe >= 2) {
+              dangerousOppWallIntersections[r * 8 + c] = Math.max(
+                dangerousOppWallIntersections[r * 8 + c],
+                Math.min(10, dmgToMe)
+              );
+            }
+          }
+        }
+      }
+    }
+  }
+
+  const computeDistancesFromCell = (startIdx: number): Int16Array => {
+    const dArr = new Int16Array(81);
+    dArr.fill(999);
+    let h = 0;
+    let t = 0;
+    dArr[startIdx] = 0;
+    corsaBfsQueue[t++] = startIdx;
+    while (h < t) {
+      const curr = corsaBfsQueue[h++];
+      const nd = dArr[curr] + 1;
+      const cr = Math.floor(curr / 9);
+      const cc = curr % 9;
+      const e = edges[curr];
+      if (cr > 0 && (e & 1) === 0 && dArr[curr - 9] === 999) {
+        dArr[curr - 9] = nd;
+        corsaBfsQueue[t++] = curr - 9;
+      }
+      if (cr < 8 && (e & 2) === 0 && dArr[curr + 9] === 999) {
+        dArr[curr + 9] = nd;
+        corsaBfsQueue[t++] = curr + 9;
+      }
+      if (cc > 0 && (e & 4) === 0 && dArr[curr - 1] === 999) {
+        dArr[curr - 1] = nd;
+        corsaBfsQueue[t++] = curr - 1;
+      }
+      if (cc < 8 && (e & 8) === 0 && dArr[curr + 1] === 999) {
+        dArr[curr + 1] = nd;
+        corsaBfsQueue[t++] = curr + 1;
+      }
+    }
+    return dArr;
+  };
+
+  const generateCandidateWalls = (
+    moverIdx: number,
+    targetIdx: number,
+    maxWalls: number,
+    isRoot: boolean
+  ): CorsaCandidateWall[] => {
+    if (wallsLeft[moverIdx] <= 0) return [];
+    const moverId = playerIds[moverIdx];
+    const targetId = playerIds[targetIdx];
+    const moverPos = positions[moverIdx];
+    const targetPos = positions[targetIdx];
+
+    const baseMover = analyzeCorsaPlayerPath(moverPos, moverId, edges);
+    const baseTarget = analyzeCorsaPlayerPath(targetPos, targetId, edges);
+    if (baseMover.shortestDist >= 999 || baseTarget.shortestDist >= 999) return [];
+
+    const distFromTarget = computeDistancesFromCell(targetPos);
+    const distFromMover = computeDistancesFromCell(moverPos);
+    const targetNearPathMask = new Uint8Array(81);
+    const moverShortestPathMask = new Uint8Array(81);
+    const targetMaxLen = baseTarget.shortestDist + (isRoot ? 1 : 0);
+
+    for (let idx = 0; idx < 81; idx++) {
+      if (distFromTarget[idx] + baseTarget.dist[idx] <= targetMaxLen) {
+        targetNearPathMask[idx] = 1;
+      }
+      if (distFromMover[idx] + baseMover.dist[idx] === baseMover.shortestDist) {
+        moverShortestPathMask[idx] = 1;
+      }
+    }
+
+    const candidates: CorsaCandidateWall[] = [];
+    const tr = Math.floor(targetPos / 9);
+    const tc = targetPos % 9;
+
+    for (let r = 0; r < 8; r++) {
+      for (let c = 0; c < 8; c++) {
+        const idx = r * 9 + c;
+        const antiTrapDmg = isRoot && moverIdx === aiIdx ? dangerousOppWallIntersections[r * 8 + c] : 0;
+        const touchesTargetPath =
+          targetNearPathMask[idx] === 1 ||
+          targetNearPathMask[idx + 1] === 1 ||
+          targetNearPathMask[idx + 9] === 1 ||
+          targetNearPathMask[idx + 10] === 1;
+
+        if (!touchesTargetPath && antiTrapDmg < 2) continue;
+
+        const touchesMoverPath =
+          moverShortestPathMask[idx] === 1 ||
+          moverShortestPathMask[idx + 1] === 1 ||
+          moverShortestPathMask[idx + 9] === 1 ||
+          moverShortestPathMask[idx + 10] === 1;
+
+        for (let orient = 0; orient < 2; orient++) {
+          const isHoriz = orient === 0;
+          if (!canPlaceCorsaWallFast(edges, r, c, isHoriz)) continue;
+
+          applyCorsaWallFast(edges, r, c, isHoriz);
+          const newTargetDist = touchesTargetPath
+            ? computeCorsaShortestDistFast(targetPos, targetId, edges)
+            : baseTarget.shortestDist;
+          if (newTargetDist >= 999) {
+            removeCorsaWallFast(edges, r, c, isHoriz);
+            continue;
+          }
+          const newMoverDist = touchesMoverPath
+            ? computeCorsaShortestDistFast(moverPos, moverId, edges)
+            : baseMover.shortestDist;
+          if (newMoverDist >= 999 || !allPlayersHavePath(moverIdx, targetIdx)) {
+            removeCorsaWallFast(edges, r, c, isHoriz);
+            continue;
+          }
+
+          const oppDelta = newTargetDist - baseTarget.shortestDist;
+          const myDelta = newMoverDist - baseMover.shortestDist;
+          const netDelta = oppDelta - myDelta;
+
+          const antiTrapBonus = antiTrapDmg >= 2 ? antiTrapDmg * 220 : 0;
+
+          if (netDelta < 0 && antiTrapBonus === 0) {
+            removeCorsaWallFast(edges, r, c, isHoriz);
+            continue;
+          }
+
+          let tacticalBonus = antiTrapBonus;
+          let narrowsCorridor = false;
+
+          if (oppDelta >= 0 && touchesTargetPath && (isRoot || netDelta >= 1)) {
+            const newTargetAnalysis = analyzeCorsaPlayerPath(targetPos, targetId, edges);
+            if (newTargetAnalysis.mustBacktrack && !baseTarget.mustBacktrack) {
+              tacticalBonus += 360;
+              narrowsCorridor = true;
+            }
+            if (newTargetAnalysis.optimalExits < baseTarget.optimalExits) {
+              tacticalBonus += (baseTarget.optimalExits - newTargetAnalysis.optimalExits) * 140;
+              if (newTargetAnalysis.optimalExits === 1) tacticalBonus += 90;
+              narrowsCorridor = true;
+            }
+            if (newTargetAnalysis.corridorBranches < baseTarget.corridorBranches) {
+              tacticalBonus += (baseTarget.corridorBranches - newTargetAnalysis.corridorBranches) * 35;
+              narrowsCorridor = true;
+            }
+          }
+
+          removeCorsaWallFast(edges, r, c, isHoriz);
+
+          if (netDelta >= 1 || (netDelta === 0 && (narrowsCorridor || antiTrapBonus > 0))) {
+            const distToTarget = Math.abs(r - tr) + Math.abs(c - tc);
+            const proximityBonus = Math.max(0, 12 - distToTarget) * 8;
+            const priority = netDelta * 1000 + tacticalBonus + proximityBonus;
+            candidates.push({ r, c, isHoriz, priority, netDelta });
+          }
+        }
+      }
+    }
+
+    candidates.sort((a, b) => b.priority - a.priority);
+    return candidates.slice(0, maxWalls);
+  };
+
+  const alphaBeta = (
+    depth: number,
+    alpha: number,
+    beta: number,
+    turnIdx: number,
+    ply: number
+  ): number => {
+    nodeCount++;
+    if ((nodeCount & 31) === 0) {
+      const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+      if (now - startTime > TIME_LIMIT_MS) {
+        timeAborted = true;
+      }
+    }
+
+    const myDistNow = computeCorsaShortestDistFast(positions[aiIdx], aiPlayerId, edges);
+    if (myDistNow === 0) return 1000000 - ply * 1000;
+    const oppDistNow = computeCorsaShortestDistFast(positions[primaryOppIdx], playerIds[primaryOppIdx], edges);
+    if (oppDistNow === 0) return -1000000 + ply * 1000;
+
+    if (depth <= 0 || timeAborted) {
+      return evaluateState(turnIdx, ply);
+    }
+
+    const isMaximizing = turnIdx === aiIdx;
+    const nextTurnIdx = isMaximizing ? primaryOppIdx : aiIdx;
+    const moverPos = positions[turnIdx];
+    const moverId = playerIds[turnIdx];
+    const moverAnalysis = analyzeCorsaPlayerPath(moverPos, moverId, edges);
+
+    // 1. Generate and order legal pawn moves (best shortest-path moves first)
+    const pawnMoves = getFastCorsaPawnMoves(moverPos, positions, turnIdx, edges);
+    pawnMoves.sort((a, b) => {
+      const da = moverAnalysis.dist[a];
+      const db = moverAnalysis.dist[b];
+      if (da !== db) return da - db;
+      return Math.abs((a % 9) - 4) - Math.abs((b % 9) - 4);
+    });
+
+    // At deeper plies, only expand the top 2-3 pawn moves (those that advance or sidestep)
+    const maxPawnMoves = ply === 1 ? 4 : 2;
+    const orderedPawnMoves = pawnMoves.slice(0, maxPawnMoves);
+
+    // 2. Generate top tactical wall placements
+    const maxWalls = ply === 1 ? 8 : 4;
+    const candidateWalls = generateCandidateWalls(
+      turnIdx,
+      isMaximizing ? primaryOppIdx : aiIdx,
+      maxWalls,
+      false
+    );
+
+    if (isMaximizing) {
+      let value = -Infinity;
+
+      // If opponent is about to win (dist <= 2), try high-impact walls BEFORE pawn moves for faster beta cutoffs
+      const wallsFirst = oppDistNow <= 2 && candidateWalls.length > 0 && candidateWalls[0].netDelta >= 1;
+
+      const runPawnMoves = () => {
+        for (let i = 0; i < orderedPawnMoves.length; i++) {
+          const mIdx = orderedPawnMoves[i];
+          positions[turnIdx] = mIdx;
+          const childVal = alphaBeta(depth - 1, alpha, beta, nextTurnIdx, ply + 1);
+          positions[turnIdx] = moverPos;
+          if (childVal > value) value = childVal;
+          if (value > alpha) alpha = value;
+          if (alpha >= beta || timeAborted) return;
+        }
+      };
+
+      const runWalls = () => {
+        for (let i = 0; i < candidateWalls.length; i++) {
+          const w = candidateWalls[i];
+          applyCorsaWallFast(edges, w.r, w.c, w.isHoriz);
+          wallsLeft[turnIdx]--;
+          const childVal = alphaBeta(depth - 1, alpha, beta, nextTurnIdx, ply + 1);
+          wallsLeft[turnIdx]++;
+          removeCorsaWallFast(edges, w.r, w.c, w.isHoriz);
+          if (childVal > value) value = childVal;
+          if (value > alpha) alpha = value;
+          if (alpha >= beta || timeAborted) return;
+        }
+      };
+
+      if (wallsFirst) {
+        runWalls();
+        if (alpha < beta && !timeAborted) runPawnMoves();
+      } else {
+        runPawnMoves();
+        if (alpha < beta && !timeAborted) runWalls();
+      }
+
+      return value === -Infinity ? evaluateState(turnIdx, ply) : value;
+    } else {
+      let value = Infinity;
+
+      const wallsFirst = myDistNow <= 2 && candidateWalls.length > 0 && candidateWalls[0].netDelta >= 1;
+
+      const runPawnMoves = () => {
+        for (let i = 0; i < orderedPawnMoves.length; i++) {
+          const mIdx = orderedPawnMoves[i];
+          positions[turnIdx] = mIdx;
+          const childVal = alphaBeta(depth - 1, alpha, beta, nextTurnIdx, ply + 1);
+          positions[turnIdx] = moverPos;
+          if (childVal < value) value = childVal;
+          if (value < beta) beta = value;
+          if (alpha >= beta || timeAborted) return;
+        }
+      };
+
+      const runWalls = () => {
+        for (let i = 0; i < candidateWalls.length; i++) {
+          const w = candidateWalls[i];
+          applyCorsaWallFast(edges, w.r, w.c, w.isHoriz);
+          wallsLeft[turnIdx]--;
+          const childVal = alphaBeta(depth - 1, alpha, beta, nextTurnIdx, ply + 1);
+          wallsLeft[turnIdx]++;
+          removeCorsaWallFast(edges, w.r, w.c, w.isHoriz);
+          if (childVal < value) value = childVal;
+          if (value < beta) beta = value;
+          if (alpha >= beta || timeAborted) return;
+        }
+      };
+
+      if (wallsFirst) {
+        runWalls();
+        if (alpha < beta && !timeAborted) runPawnMoves();
+      } else {
+        runPawnMoves();
+        if (alpha < beta && !timeAborted) runWalls();
+      }
+
+      return value === Infinity ? evaluateState(turnIdx, ply) : value;
+    }
+  };
+
+  // --- ROOT ACTION GENERATION & SELECTION ---
+  const myRootPos = positions[aiIdx];
+  const myRootAnalysis = analyzeCorsaPlayerPath(myRootPos, aiPlayerId, edges);
+  const rootPawnMoves = getFastCorsaPawnMoves(myRootPos, positions, aiIdx, edges);
+
+  // Immediate winning pawn move check
+  for (let i = 0; i < rootPawnMoves.length; i++) {
+    const mIdx = rootPawnMoves[i];
+    if (myRootAnalysis.dist[mIdx] === 0) {
+      return {
+        pieceIdx: 0,
+        movePos: { r: Math.floor(mIdx / 9), c: mIdx % 9 },
+        wallTarget: null,
+      };
+    }
+  }
+
+  rootPawnMoves.sort((a, b) => {
+    const da = myRootAnalysis.dist[a];
+    const db = myRootAnalysis.dist[b];
+    if (da !== db) return da - db;
+    return Math.abs((a % 9) - 4) - Math.abs((b % 9) - 4);
+  });
+
+  const rawRootWalls = generateCandidateWalls(aiIdx, primaryOppIdx, 16, true);
+  // Filter with isValidFugaWall at root to guarantee 100% compatibility with App.tsx execution
+  const rootWalls: CorsaCandidateWall[] = [];
+  for (let i = 0; i < rawRootWalls.length; i++) {
+    const w = rawRootWalls[i];
+    const orientation: 'h' | 'v' = w.isHoriz ? 'h' : 'v';
+    if (isValidFugaWall({ r: w.r, c: w.c, orientation }, gameState.walls, gameState.players, 'corsa')) {
+      rootWalls.push(w);
+      if (rootWalls.length >= 12) break;
+    }
+  }
+
+  // Determine search depth (3 ply standard = AI -> Opp -> AI; 4 ply in critical endgame/close combat)
+  const pawnsClose =
+    Math.abs(Math.floor(myRootPos / 9) - Math.floor(positions[primaryOppIdx] / 9)) +
+      Math.abs((myRootPos % 9) - (positions[primaryOppIdx] % 9)) <=
+    2;
+  const searchDepth = bestOppDist <= 3 || myRootAnalysis.shortestDist <= 3 || pawnsClose ? 3 : 2; // Note: root is ply 0, so child call with depth=2 searches 3 total plies, depth=3 searches 4 total plies
+
+  let bestScore = -Infinity;
+  let bestAction: AIAction | null = null;
+  let alpha = -Infinity;
+  const beta = Infinity;
+
+  // Evaluate root pawn moves
+  for (let i = 0; i < rootPawnMoves.length; i++) {
+    const mIdx = rootPawnMoves[i];
+    positions[aiIdx] = mIdx;
+    const score = alphaBeta(searchDepth, alpha, beta, primaryOppIdx, 1);
+    positions[aiIdx] = myRootPos;
+
+    if (score > bestScore || !bestAction) {
+      bestScore = score;
+      bestAction = {
+        pieceIdx: 0,
+        movePos: { r: Math.floor(mIdx / 9), c: mIdx % 9 },
+        wallTarget: null,
+      };
+    }
+    if (bestScore > alpha) alpha = bestScore;
+  }
+
+  // Evaluate root wall placements
+  for (let i = 0; i < rootWalls.length; i++) {
+    if (timeAborted && i >= 4) break;
+    const w = rootWalls[i];
+    applyCorsaWallFast(edges, w.r, w.c, w.isHoriz);
+    wallsLeft[aiIdx]--;
+    const score = alphaBeta(searchDepth, alpha, beta, primaryOppIdx, 1);
+    wallsLeft[aiIdx]++;
+    removeCorsaWallFast(edges, w.r, w.c, w.isHoriz);
+
+    // Require a small margin (+25) over best pawn move so AI doesn't spend a wall on a pure tie
+    if (score > bestScore + 25 || !bestAction) {
+      bestScore = score;
+      bestAction = {
+        pieceIdx: 0,
+        movePos: startPos,
+        wallTarget: null,
+        fugaWallTarget: {
+          r: w.r,
+          c: w.c,
+          orientation: w.isHoriz ? 'h' : 'v',
+        },
+      };
+      if (bestScore > alpha) alpha = bestScore;
+    }
+  }
+
+  return bestAction;
+};
+
 export const getBestMoveForAI = (gameState: GameState, playerId: PlayerId): AIAction | null => {
+  // Per Quoridor ('corsa') a livello "Difficile" (estrema), usa il nuovo motore Alpha-Beta dedicato
+  if (gameState.gameMode === 'corsa' && gameState.difficulty === 'estrema') {
+    const extremeAction = getBestCorsaExtremeMoveForAI(gameState, playerId);
+    if (extremeAction) return extremeAction;
+  }
+
   const theme = gameState.boardTheme;
   const currentPlayer = gameState.players.find(p => p.id === playerId)!;
   const opponents = gameState.players.filter(p => p.id !== playerId);
@@ -539,31 +1432,18 @@ export const getBestMoveForAI = (gameState: GameState, playerId: PlayerId): AIAc
 
        // Evaluate wall placements (with no move attached)
        if ((currentPlayer.wallsLeft || 0) > 0) {
-           // Find true closest opponent using paths for better difficulty scaling
-           let closestOpponents = [...opponents];
-           if (gameState.difficulty !== 'normale') {
-               // Calculate true distance for better wall placement
-               closestOpponents = opponents.map(opp => {
-                   let minPath = Infinity;
-                   opp.positions.forEach(pos => {
-                       const maps = getDistancesMap(pos, gameState.walls, theme);
-                       for (let i=0; i<9; i++) {
-                           const goalP = opp.id === 1 ? {r:0,c:i} : opp.id === 2 ? {r:8,c:i} : opp.id === 3 ? {r:i,c:8} : {r:i,c:0};
-                           if (maps[goalP.r]) minPath = Math.min(minPath, maps[goalP.r][goalP.c]);
-                       }
-                   });
-                   return { opp, pathLen: minPath };
-               }).sort((a, b) => a.pathLen - b.pathLen).map(x => x.opp);
-           } else {
-               closestOpponents = opponents.map(opp => {
-                   let bestD = Infinity;
-                   opp.positions.forEach(pos => {
-                       const d = opp.id === 1 ? pos.r : opp.id === 2 ? 8 - pos.r : opp.id === 3 ? 8 - pos.c : pos.c;
-                       if (d < bestD) bestD = d;
-                   });
-                   return { opp, d: bestD };
-               }).sort((a, b) => a.d - b.d).map(x => x.opp);
-           }
+           // Sia "Semplice" (normale = ex-Medio) sia "Medio" (difficile = ex-Difficile) usano il calcolo della distanza reale
+           const closestOpponents = opponents.map(opp => {
+               let minPath = Infinity;
+               opp.positions.forEach(pos => {
+                   const maps = getDistancesMap(pos, gameState.walls, theme);
+                   for (let i=0; i<9; i++) {
+                       const goalP = opp.id === 1 ? {r:0,c:i} : opp.id === 2 ? {r:8,c:i} : opp.id === 3 ? {r:i,c:8} : {r:i,c:0};
+                       if (maps[goalP.r]) minPath = Math.min(minPath, maps[goalP.r][goalP.c]);
+                   }
+               });
+               return { opp, pathLen: minPath };
+           }).sort((a, b) => a.pathLen - b.pathLen).map(x => x.opp);
 
            // Evaluate ALL Fuga Fuga walls
            const validSampleWalls: { r: number, c: number, orientation: 'h'|'v' }[] = [];
@@ -637,9 +1517,13 @@ export const getBestMoveForAI = (gameState: GameState, playerId: PlayerId): AIAc
 
   const isNormale = gameState.difficulty === 'normale';
   const isEstrema = gameState.difficulty === 'estrema';
+  // Per Quoridor ('corsa'): "Medio" (difficile) usa i parametri dell'ex-Difficile (estrema), "Semplice" (normale) usa i parametri dell'ex-Medio (difficile)
+  const isCorsaExEstrema = gameState.gameMode === 'corsa' && gameState.difficulty === 'difficile';
   let TOP_N = isEstrema ? 16 : (gameState.boardTheme.startsWith('amazons') ? 4 : 10);
   if (isNormale) TOP_N = 2; // Introduce minimal lookahead for Semplice
-  if (gameState.gameMode === 'corsa' && !isNormale) TOP_N = isEstrema ? 20 : 12; // Increase width for Quoridor to find defensive walls
+  if (gameState.gameMode === 'corsa') {
+    TOP_N = isCorsaExEstrema ? 20 : 12;
+  }
   
   const topActions = actions.slice(0, TOP_N);
   
@@ -665,6 +1549,9 @@ export const getBestMoveForAI = (gameState: GameState, playerId: PlayerId): AIAc
     let oppEvalsCount = 0;
     let MAX_OPP_EVALS = isEstrema ? (theme.startsWith('amazons') ? 400 : 800) : (theme.startsWith('amazons') ? 80 : 300);
     if (isNormale) MAX_OPP_EVALS = theme.startsWith('amazons') ? 10 : 30; // Very fast evaluation for Semplice
+    if (gameState.gameMode === 'corsa') {
+      MAX_OPP_EVALS = isCorsaExEstrema ? 800 : 300;
+    }
 
     // To prevent freezing, we shuffle pieces and moves and break early once MAX_OPP_EVALS is reached
     const pieceIndices = nextPlayer.positions.map((_, i) => i).sort(() => Math.random() - 0.5);
@@ -707,7 +1594,7 @@ export const getBestMoveForAI = (gameState: GameState, playerId: PlayerId): AIAc
                     for (let c = 0; c < 8; c++) {
                         const dist = Math.abs(r - startPos.r) + Math.abs(c - startPos.c);
                         // Per migliorare le performance nel minimax, filtriamo i muri troppo lontani (tranne alcuni random per variazione)
-                        if (dist > 4 && Math.random() > (isEstrema ? 0.4 : 0.2)) continue;
+                        if (dist > 4 && Math.random() > (isCorsaExEstrema ? 0.4 : 0.2)) continue;
                         
                         if (isValidFugaWall({r, c, orientation: 'h'}, tempWalls, oppSimulatedPlayers, theme)) validOppSampleWalls.push({r, c, orientation: 'h', dist});
                         if (isValidFugaWall({r, c, orientation: 'v'}, tempWalls, oppSimulatedPlayers, theme)) validOppSampleWalls.push({r, c, orientation: 'v', dist});
@@ -715,7 +1602,7 @@ export const getBestMoveForAI = (gameState: GameState, playerId: PlayerId): AIAc
                 }
                 
                 validOppSampleWalls.sort((a,b) => a.dist - b.dist);
-                const bestOppWalls = validOppSampleWalls.slice(0, isEstrema ? 16 : 8);
+                const bestOppWalls = validOppSampleWalls.slice(0, isCorsaExEstrema ? 16 : 8);
 
                 for (const wallTarget of bestOppWalls) {
                     if (oppEvalsCount >= MAX_OPP_EVALS) break;

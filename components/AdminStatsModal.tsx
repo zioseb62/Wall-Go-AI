@@ -583,7 +583,6 @@ export const AdminStatsModal: React.FC<AdminStatsModalProps> = ({ onClose }) => 
           });
 
           const docScore = Number(data.totalScore) || 0;
-          const baseScore = Math.max(0, docScore - deviceBadgePoints);
           
           if (data.unlockedModes && Array.isArray(data.unlockedModes)) {
             data.unlockedModes.forEach((m: string) => userGroups[slug].unlockedModes.add(m));
@@ -592,20 +591,20 @@ export const AdminStatsModal: React.FC<AdminStatsModalProps> = ({ onClose }) => 
             data.freeUnlockedModes.forEach((m: string) => userGroups[slug].freeUnlockedModes.add(m));
           }
           
-          userGroups[slug].totalBaseScore += baseScore;
-          userGroups[slug].totalFugaScore += Number(data.totalFugaScore) || 0;
-          userGroups[slug].totalAmazonsScore += Number(data.totalAmazonsScore) || 0;
-          userGroups[slug].totalDomineeringScore += Number(data.totalDomineeringScore) || 0;
-          userGroups[slug].totalAbaloneScore += Number(data.totalAbaloneScore) || 0;
-          userGroups[slug].totalHexScore += Number(data.totalHexScore) || 0;
-          userGroups[slug].totalOrbitoScore += Number(data.totalOrbitoScore) || 0;
-          userGroups[slug].totalPenteScore += Number(data.totalPenteScore) || 0;
-          userGroups[slug].totalChainTriangleScore += Number(data.totalChainTriangleScore) || 0;
-          userGroups[slug].totalShobuScore += Number(data.totalShobuScore) || 0;
-          userGroups[slug].totalYinshScore += Number(data.totalYinshScore) || 0;
-          userGroups[slug].totalOnitamaScore += Number(data.totalOnitamaScore) || 0;
-          userGroups[slug].totalBadukScore += Number(data.totalBadukScore) || 0;
-          userGroups[slug].totalStrategoScore += Number(data.totalStrategoScore) || 0;
+          userGroups[slug].totalBaseScore = Math.max(userGroups[slug].totalBaseScore, docScore);
+          userGroups[slug].totalFugaScore = Math.max(userGroups[slug].totalFugaScore, Number(data.totalFugaScore) || 0);
+          userGroups[slug].totalAmazonsScore = Math.max(userGroups[slug].totalAmazonsScore, Number(data.totalAmazonsScore) || 0);
+          userGroups[slug].totalDomineeringScore = Math.max(userGroups[slug].totalDomineeringScore, Number(data.totalDomineeringScore) || 0);
+          userGroups[slug].totalAbaloneScore = Math.max(userGroups[slug].totalAbaloneScore, Number(data.totalAbaloneScore) || 0);
+          userGroups[slug].totalHexScore = Math.max(userGroups[slug].totalHexScore, Number(data.totalHexScore) || 0);
+          userGroups[slug].totalOrbitoScore = Math.max(userGroups[slug].totalOrbitoScore, Number(data.totalOrbitoScore) || 0);
+          userGroups[slug].totalPenteScore = Math.max(userGroups[slug].totalPenteScore, Number(data.totalPenteScore) || 0);
+          userGroups[slug].totalChainTriangleScore = Math.max(userGroups[slug].totalChainTriangleScore, Number(data.totalChainTriangleScore) || 0);
+          userGroups[slug].totalShobuScore = Math.max(userGroups[slug].totalShobuScore, Number(data.totalShobuScore) || 0);
+          userGroups[slug].totalYinshScore = Math.max(userGroups[slug].totalYinshScore, Number(data.totalYinshScore) || 0);
+          userGroups[slug].totalOnitamaScore = Math.max(userGroups[slug].totalOnitamaScore, Number(data.totalOnitamaScore) || 0);
+          userGroups[slug].totalBadukScore = Math.max(userGroups[slug].totalBadukScore, Number(data.totalBadukScore) || 0);
+          userGroups[slug].totalStrategoScore = Math.max(userGroups[slug].totalStrategoScore, Number(data.totalStrategoScore) || 0);
           
           if (lastActiveTime > userGroups[slug].lastActive) {
             userGroups[slug].lastActive = lastActiveTime;
@@ -663,10 +662,12 @@ export const AdminStatsModal: React.FC<AdminStatsModalProps> = ({ onClose }) => 
       let syncedCount = 0;
       const getPointsSpent = (unlockedModes: Set<string>, userName: string, userLocation: string, freeUnlockedModes: Set<string>): number => {
         if (userName === "ZioSeb" && userLocation.includes("Sant'Alfio")) return 0;
+        if (userName === "Patty" && userLocation.includes("Riposto")) return 0;
+        const alwaysFree = ["dominio", "pente", "amazons", "corsa", "domineering", "abalone", "hex", "orbito", "chain_triangle", "yinsh", "baduk", "onitama", "shobu"];
         let spent = 0;
         const unique = Array.from(unlockedModes);
         unique.forEach(m => {
-          if (m === "dominio") return;
+          if (alwaysFree.includes(m)) return;
           if (freeUnlockedModes.has(m)) return;
           spent += 50;
         });
@@ -680,7 +681,7 @@ export const AdminStatsModal: React.FC<AdminStatsModalProps> = ({ onClose }) => 
           totalUniqueBadgePoints += getPointsForDiff(id, diff);
         });
 
-        const finalScore = info.totalBaseScore + totalUniqueBadgePoints;
+        const finalScore = Math.max(info.totalBaseScore, totalUniqueBadgePoints);
         const ptsSpent = getPointsSpent(info.unlockedModes, info.originalName, info.location, info.freeUnlockedModes);
         const totalScoreOverall = Math.max(0, finalScore + info.totalFugaScore + info.totalAmazonsScore + info.totalDomineeringScore + info.totalAbaloneScore + info.totalHexScore + info.totalOrbitoScore + info.totalPenteScore + info.totalChainTriangleScore + info.totalShobuScore + info.totalYinshScore + info.totalOnitamaScore + info.totalBadukScore + info.totalStrategoScore - ptsSpent);
         const displayName = info.location ? `${info.originalName} (${info.location})` : info.originalName;

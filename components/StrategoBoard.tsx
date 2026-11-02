@@ -954,19 +954,25 @@ export const StrategoBoard: React.FC<StrategoBoardProps> = ({
   const [startingPlayer, setStartingPlayer] = useState<StrategoStarter>(initialStarter);
   const [selectedPreset, setSelectedPreset] = useState<string>(initialPreset);
 
-  // Sync props if changed externally
+  // Sync props if changed externally (only during initial setup before match starts)
   useEffect(() => {
-    setDifficulty(initialDifficulty);
-  }, [initialDifficulty]);
+    if (phase === "setup" && !hasEndedRef.current) {
+      setDifficulty(initialDifficulty);
+    }
+  }, [initialDifficulty, phase]);
 
   useEffect(() => {
-    setStartingPlayer(initialStarter);
-    setTurn(initialStarter);
-  }, [initialStarter]);
+    if (phase === "setup" && !hasEndedRef.current) {
+      setStartingPlayer(initialStarter);
+      setTurn(initialStarter);
+    }
+  }, [initialStarter, phase]);
 
   useEffect(() => {
-    setSelectedPreset(initialPreset);
-  }, [initialPreset]);
+    if (phase === "setup" && !hasEndedRef.current) {
+      setSelectedPreset(initialPreset);
+    }
+  }, [initialPreset, phase]);
 
   // Popup modale per selezione dello schema di posizionamento pedine
   const [isPresetModalOpen, setIsPresetModalOpen] = useState<boolean>(false);
@@ -1680,11 +1686,14 @@ export const StrategoBoard: React.FC<StrategoBoardProps> = ({
     setCombatClashSummary(null);
   }, [difficulty, myColor]);
 
-  // Initialize on mount: restore saved game if provided, else initialize fresh setup
+  const hasInitializedBoardRef = useRef<boolean>(false);
+
+  // Initialize on mount: restore saved game if provided, else initialize fresh setup once
   useEffect(() => {
     let stateToRestore = savedGameData && savedGameData.board ? savedGameData : null;
 
     if (stateToRestore && stateToRestore.board) {
+      hasInitializedBoardRef.current = true;
       setBoard(stateToRestore.board);
       setTurn(stateToRestore.turn || "red");
       const restoredPhase = stateToRestore.phase || "playing";
@@ -1727,8 +1736,11 @@ export const StrategoBoard: React.FC<StrategoBoardProps> = ({
       return;
     }
 
-    initializeSetup(selectedPreset, startingPlayer);
-  }, [savedGameData, initializeSetup, selectedPreset, startingPlayer]);
+    if (!hasInitializedBoardRef.current) {
+      hasInitializedBoardRef.current = true;
+      initializeSetup(selectedPreset, startingPlayer);
+    }
+  }, [savedGameData, initializeSetup, selectedPreset, startingPlayer, myColor]);
 
   // Handler to start or restart match from the settings dialog
   const handleStartMatchFromSettings = (
@@ -1990,18 +2002,53 @@ export const StrategoBoard: React.FC<StrategoBoardProps> = ({
   };
 
   // Check if player has at least one piece that can make a legal move
-  const checkHasMovablePieces = (player: "red" | "blue", currentBoard: (StrategoPiece | null)[][]) => {
-    for (let r = 0; r < 10; r++) {
-      for (let c = 0; c < 10; c++) {
-        const p = currentBoard[r][c];
-        if (p && p.player === player && STRATEGO_PIECE_DEFS[p.type].movable) {
-          const moves = getLegalMovesForPiece(p, currentBoard);
-          if (moves.length > 0) return true;
+  const checkHasMovablePieces = useCallback(
+    (player: "red" | "blue", currentBoard: (StrategoPiece | null)[][]) => {
+      for (let r = 0; r < 10; r++) {
+        for (let c = 0; c < 10; c++) {
+          const p = currentBoard[r][c];
+          if (p && p.player === player && STRATEGO_PIECE_DEFS[p.type].movable) {
+            const moves = getLegalMovesForPiece(p, currentBoard, { r, c });
+            if (moves.length > 0) return true;
+          }
         }
       }
-    }
-    return false;
-  };
+      return false;
+    },
+    [getLegalMovesForPiece]
+  );
+
+  // Declare victory when a player has no movable pieces or legal moves left
+  const triggerNoMovesVictory = useCallback(
+    (winningPlayer: "red" | "blue") => {
+      const winReasonText =
+        winningPlayer === myColor ? st.noLegalMovesWin : st.noLegalMovesLoss;
+      setWinner(winningPlayer);
+      setWinReason(winReasonText);
+      setPhase("gameover");
+      clearSavedGame();
+      awardGameEndPoints(winningPlayer);
+      if (winningPlayer === myColor) SoundManager.playVictory();
+      else SoundManager.playDefeat();
+      if (onlineMatchSession && onEndOnlineMatch) {
+        onEndOnlineMatch({
+          winner: winningPlayer,
+          winnerIndex: winningPlayer === "red" ? 1 : 2,
+          isMeWinner: winningPlayer === myColor,
+          reason: winReasonText,
+        });
+      }
+    },
+    [
+      myColor,
+      st.noLegalMovesWin,
+      st.noLegalMovesLoss,
+      clearSavedGame,
+      awardGameEndPoints,
+      onlineMatchSession,
+      onEndOnlineMatch,
+    ]
+  );
 
   // Callback when the 2-second sword duel animation concludes
   const handleDuelComplete = useCallback(
@@ -2022,73 +2069,25 @@ export const StrategoBoard: React.FC<StrategoBoardProps> = ({
       const { r: toR, c: toC } = targetPos;
       const { r: fromR, c: fromC } = fromPos;
 
-      setBoard((currentBoard) => {
-        const newBoard = currentBoard.map((row) => [...row]);
+      const newBoard = board.map((row) => [...row]);
 
-        if (battleResult.winner === "attacker") {
-          newBoard[fromR][fromC] = null;
-          newBoard[toR][toC] = { ...attacker, row: toR, col: toC, revealedToOpponent: true };
-          if (defender.player === "blue") {
-            setCapturedBlue((prev) => [...prev, defender]);
-            SoundManager.playPlaceWall();
-          } else {
-            setCapturedRed((prev) => [...prev, defender]);
-            SoundManager.playDefeat();
-          }
-
-          // Win condition: captured flag
-          if (defender.type === "flag") {
-            const winReasonText = attacker.player === myColor
-              ? st.flagCapturedWin
-              : st.flagCapturedLoss;
-            setWinner(attacker.player);
-            setWinReason(winReasonText);
-            setPhase("gameover");
-            clearSavedGame();
-            awardGameEndPoints(attacker.player);
-            if (attacker.player === myColor) SoundManager.playVictory();
-            else SoundManager.playDefeat();
-            if (onlineMatchSession && onEndOnlineMatch) {
-              onEndOnlineMatch({
-                winner: attacker.player,
-                winnerIndex: attacker.player === "red" ? 1 : 2,
-                isMeWinner: attacker.player === myColor,
-                reason: winReasonText,
-              });
-            }
-            setActiveDuel(null);
-            scheduleZoomResetAfterMove();
-            return newBoard;
-          }
-        } else if (battleResult.winner === "defender") {
-          newBoard[fromR][fromC] = null; // Attacker dies
-          newBoard[toR][toC] = { ...defender, revealedToOpponent: true }; // Defender survives and is revealed!
-          if (attacker.player === myColor) {
-            setCapturedRed((prev) => [...prev, attacker]);
-            SoundManager.playDefeat();
-          } else {
-            setCapturedBlue((prev) => [...prev, attacker]);
-            SoundManager.playPlaceWall();
-          }
+      if (battleResult.winner === "attacker") {
+        newBoard[fromR][fromC] = null;
+        newBoard[toR][toC] = { ...attacker, row: toR, col: toC, revealedToOpponent: true };
+        if (defender.player === "blue") {
+          setCapturedBlue((prev) => [...prev, defender]);
+          SoundManager.playPlaceWall();
         } else {
-          // Draw: both eliminated
-          newBoard[fromR][fromC] = null;
-          newBoard[toR][toC] = null;
-          if (attacker.player === "red") setCapturedRed((prev) => [...prev, attacker]);
-          else setCapturedBlue((prev) => [...prev, attacker]);
-
-          if (defender.player === "red") setCapturedRed((prev) => [...prev, defender]);
-          else setCapturedBlue((prev) => [...prev, defender]);
+          setCapturedRed((prev) => [...prev, defender]);
           SoundManager.playDefeat();
         }
 
-        // Check if next player has any movable pieces left
-        const nextPlayer = attacker.player === "red" ? "blue" : "red";
-        const nextPlayerHasMoves = checkHasMovablePieces(nextPlayer, newBoard);
-        if (!nextPlayerHasMoves) {
+        // Win condition: captured flag
+        if (defender.type === "flag") {
           const winReasonText = attacker.player === myColor
-            ? st.noLegalMovesWin
-            : st.noLegalMovesLoss;
+            ? st.flagCapturedWin
+            : st.flagCapturedLoss;
+          setBoard(newBoard);
           setWinner(attacker.player);
           setWinReason(winReasonText);
           setPhase("gameover");
@@ -2106,16 +2105,69 @@ export const StrategoBoard: React.FC<StrategoBoardProps> = ({
           }
           setActiveDuel(null);
           scheduleZoomResetAfterMove();
-          return newBoard;
+          return;
         }
+      } else if (battleResult.winner === "defender") {
+        newBoard[fromR][fromC] = null; // Attacker dies
+        newBoard[toR][toC] = { ...defender, row: toR, col: toC, revealedToOpponent: true }; // Defender survives and is revealed!
+        if (attacker.player === myColor) {
+          setCapturedRed((prev) => [...prev, attacker]);
+          SoundManager.playDefeat();
+        } else {
+          setCapturedBlue((prev) => [...prev, attacker]);
+          SoundManager.playPlaceWall();
+        }
+      } else {
+        // Draw: both eliminated
+        newBoard[fromR][fromC] = null;
+        newBoard[toR][toC] = null;
+        if (attacker.player === "red") setCapturedRed((prev) => [...prev, attacker]);
+        else setCapturedBlue((prev) => [...prev, attacker]);
 
-        setTurn(nextPlayer);
+        if (defender.player === "red") setCapturedRed((prev) => [...prev, defender]);
+        else setCapturedBlue((prev) => [...prev, defender]);
+        SoundManager.playDefeat();
+      }
+
+      setBoard(newBoard);
+
+      // Check if either the defender (nextPlayer) OR the attacker has no movable pieces / legal moves left
+      const nextPlayer = attacker.player === "red" ? "blue" : "red";
+      const nextPlayerHasMoves = checkHasMovablePieces(nextPlayer, newBoard);
+      const attackerPlayerHasMoves = checkHasMovablePieces(attacker.player, newBoard);
+
+      if (!nextPlayerHasMoves) {
+        triggerNoMovesVictory(attacker.player);
         setActiveDuel(null);
         scheduleZoomResetAfterMove();
-        return newBoard;
-      });
+        return;
+      }
+
+      if (!attackerPlayerHasMoves) {
+        // Attacker lost their last movable piece (e.g. hitting a Bomb, higher-ranked piece, or draw)
+        triggerNoMovesVictory(nextPlayer);
+        setActiveDuel(null);
+        scheduleZoomResetAfterMove();
+        return;
+      }
+
+      setTurn(nextPlayer);
+      setActiveDuel(null);
+      scheduleZoomResetAfterMove();
     },
-    [language, scheduleZoomResetAfterMove]
+    [
+      board,
+      myColor,
+      st.flagCapturedWin,
+      st.flagCapturedLoss,
+      clearSavedGame,
+      awardGameEndPoints,
+      onlineMatchSession,
+      onEndOnlineMatch,
+      checkHasMovablePieces,
+      triggerNoMovesVictory,
+      scheduleZoomResetAfterMove,
+    ]
   );
 
   // Execute a move on the board with slow and realistic animation
@@ -2206,21 +2258,27 @@ export const StrategoBoard: React.FC<StrategoBoardProps> = ({
     // 3. Complete glide animation (875ms)
     setTimeout(() => {
       // Simple Move to empty square
-      setBoard((prev) => {
-        const nextBoard = prev.map((row) => [...row]);
-        const pieceToMove = nextBoard[fromR][fromC] || sourcePiece;
-        nextBoard[fromR][fromC] = null;
-        nextBoard[toR][toC] = { ...pieceToMove, row: toR, col: toC };
-        return nextBoard;
-      });
+      const nextBoard = board.map((row) => [...row]);
+      const pieceToMove = nextBoard[fromR][fromC] || sourcePiece;
+      nextBoard[fromR][fromC] = null;
+      nextBoard[toR][toC] = { ...pieceToMove, row: toR, col: toC };
+      setBoard(nextBoard);
       SoundManager.playMovePiece();
       setAnimatingMove(null);
 
       // Reset zoom 1 second after move completion
       scheduleZoomResetAfterMove();
 
-      // Switch turn
+      // Switch turn & verify next player still has legal moves
       const nextTurn = sourcePiece.player === "red" ? "blue" : "red";
+      if (!checkHasMovablePieces(nextTurn, nextBoard)) {
+        triggerNoMovesVictory(sourcePiece.player);
+        return;
+      }
+      if (!checkHasMovablePieces(sourcePiece.player, nextBoard)) {
+        triggerNoMovesVictory(nextTurn);
+        return;
+      }
       setTurn(nextTurn);
     }, 875);
   };
@@ -2229,9 +2287,25 @@ export const StrategoBoard: React.FC<StrategoBoardProps> = ({
     executeMoveRef.current = executeMove;
   });
 
+  // Safety check at every turn / board state in playing phase:
+  // If either player has no movable pieces or legal moves left (e.g., all movable pieces eliminated or trapped behind Bombs/Lakes),
+  // immediately declare victory for the opponent!
+  useEffect(() => {
+    if (phase !== "playing" || animatingMove || activeDuel || winner) return;
+    const currentTurnHasMoves = checkHasMovablePieces(turn, board);
+    const otherPlayer: "red" | "blue" = turn === "red" ? "blue" : "red";
+    const otherPlayerHasMoves = checkHasMovablePieces(otherPlayer, board);
+
+    if (!currentTurnHasMoves) {
+      triggerNoMovesVictory(otherPlayer);
+    } else if (!otherPlayerHasMoves) {
+      triggerNoMovesVictory(turn);
+    }
+  }, [phase, turn, board, animatingMove, activeDuel, winner, checkHasMovablePieces, triggerNoMovesVictory]);
+
   // AI turn automation with configurable difficulty (supports local game and online simulated opponents)
   useEffect(() => {
-    if (phase !== "playing") return;
+    if (phase !== "playing" || animatingMove || activeDuel || winner) return;
     const aiPlayer: "red" | "blue" = myColor === "red" ? "blue" : "red";
     const isAiTurn = onlineMatchSession
       ? (onlineMatchSession.isSimulatedOpponent && turn === aiPlayer)
@@ -2270,7 +2344,7 @@ export const StrategoBoard: React.FC<StrategoBoardProps> = ({
         for (let c = 0; c < 10; c++) {
           const piece = board[r][c];
           if (piece && piece.player === aiPlayer && STRATEGO_PIECE_DEFS[piece.type].movable) {
-            const moves = getLegalMovesForPiece(piece, board);
+            const moves = getLegalMovesForPiece(piece, board, { r, c });
             const currentlyInDanger = isSquareThreatenedByStronger(r, c, piece.rank, piece.type);
 
             moves.forEach((m) => {
@@ -2423,26 +2497,12 @@ export const StrategoBoard: React.FC<StrategoBoardProps> = ({
         executeMove(chosen.fromR, chosen.fromC, chosen.toR, chosen.toC);
       } else {
         // AI has no moves: Human wins!
-        const winReasonText = st.noLegalMovesWin;
-        setWinner(myColor);
-        setWinReason(winReasonText);
-        setPhase("gameover");
-        clearSavedGame();
-        awardGameEndPoints(myColor);
-        SoundManager.playVictory();
-        if (onlineMatchSession && onEndOnlineMatch) {
-          onEndOnlineMatch({
-            winner: myColor,
-            winnerIndex: myPlayerIndex,
-            isMeWinner: true,
-            reason: winReasonText,
-          });
-        }
+        triggerNoMovesVictory(myColor);
       }
     }, 700);
 
     return () => clearTimeout(timer);
-  }, [phase, turn, board, getLegalMovesForPiece, difficulty, myColor, onlineMatchSession, onEndOnlineMatch, myPlayerIndex, language, awardGameEndPoints]);
+  }, [phase, turn, board, animatingMove, activeDuel, winner, getLegalMovesForPiece, difficulty, myColor, onlineMatchSession, triggerNoMovesVictory]);
 
   // Active inspected piece: on desktop, mouse hover prioritizes live preview; on mobile (or when no hover), selected/tapped piece is shown stably!
   const activeInspectedPiece = useMemo(() => {

@@ -431,7 +431,9 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({ onClose, lan
                               shobu_master: 15,
                               yinsh_master: 20,
                               onitama_hard: 20,
-                              baduk_extreme: 50,
+                              baduk_extreme: 30,
+                              pente_extreme: 30,
+                              domineering_extreme: 30,
                               stratego_master: 30,
                             };
                             let localBadgeSum = 0;
@@ -457,7 +459,7 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({ onClose, lan
                                     </div>
                                     <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-1.5 flex flex-col items-center justify-center">
                                         <span className="text-[8px] font-black text-emerald-500 uppercase tracking-widest mb-0.5">{language === 'it' ? 'Spesi' : 'Spent'}</span>
-                                        <span className="text-sm font-black text-emerald-400">{Array.from(new Set(stats.unlockedModes || [])).filter(m => !["dominio", "pente", "amazons", "corsa", "domineering", "abalone", "hex", "orbito", "chain_triangle", "yinsh"].includes(m) && !(stats.freeUnlockedModes && stats.freeUnlockedModes.includes(m))).length * 50}</span>
+                                        <span className="text-sm font-black text-emerald-400">{Array.from(new Set(stats.unlockedModes || [])).filter(m => !["dominio", "pente", "amazons", "corsa", "domineering", "abalone", "hex", "orbito", "chain_triangle", "yinsh", "baduk", "onitama", "shobu"].includes(m) && !(stats.freeUnlockedModes && stats.freeUnlockedModes.includes(m))).length * 50}</span>
                                     </div>
                                     <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-1.5 flex flex-col items-center justify-center">
                                         <span className="text-[8px] font-black text-blue-500 uppercase tracking-widest mb-0.5">Wall Go</span>
