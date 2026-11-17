@@ -78,14 +78,10 @@ export const getBestPenteMoveForAI = (gameState: GameState, playerId: PlayerId, 
     };
 
     let bestScore = -Infinity;
-    let candidates: Point[] = [];
+    const scoredCandidates: { pt: Point; score: number }[] = [];
 
     const aiPlayer = gameState.players.find(p => p.id === playerId);
     const aiPiecesCount = aiPlayer?.positions.length || 0;
-
-    if (aiPiecesCount === 0 && (difficulty === 'difficile' || difficulty === 'estrema')) {
-        return {r: 7, c: 7};
-    }
 
     let hasPieces = false;
     for (let r=0; r<GRID_SIZE; r++) {
@@ -97,15 +93,21 @@ export const getBestPenteMoveForAI = (gameState: GameState, playerId: PlayerId, 
         return {r: 7, c: 7};
     }
 
+    if (aiPiecesCount === 0 && board[7][7] === 0 && (difficulty === 'difficile' || difficulty === 'estrema')) {
+        return {r: 7, c: 7};
+    }
+
     const searchRadius = difficulty === 'estrema' ? 2 : 2;
+    const earlyPenteJitter = aiPiecesCount <= 2 ? 22 : 4;
 
     for (let r=0; r<GRID_SIZE; r++) {
         for (let c=0; c<GRID_SIZE; c++) {
             if (board[r][c] !== 0) continue;
 
             if (aiPiecesCount === 1 && (difficulty === 'difficile' || difficulty === 'estrema')) {
-                if (Math.max(Math.abs(r - 7), Math.abs(c - 7)) < 3) {
-                    continue; // Must be at least 3 intersections away
+                const distFromCenter = Math.max(Math.abs(r - 7), Math.abs(c - 7));
+                if (distFromCenter < 3 || distFromCenter > 4) {
+                    continue; // Tournament rule: at least 3 intersections away, keep within ring 3-4 for strong opening
                 }
             } else {
                 let near = false;
@@ -147,24 +149,25 @@ export const getBestPenteMoveForAI = (gameState: GameState, playerId: PlayerId, 
             defScore -= getVulnerability(r, c) * 300;
 
             if (difficulty === 'normale') {
-                score = offScore * 1.0 + defScore * 0.9 + Math.random() * 10;
+                score = offScore * 1.0 + defScore * 0.9 + Math.random() * Math.max(15, earlyPenteJitter);
             } else if (difficulty === 'difficile') {
-                score = offScore * 1.0 + defScore * 1.0 + Math.random() * 5;
+                score = offScore * 1.0 + defScore * 1.0 + Math.random() * earlyPenteJitter;
             } else {
-                score = offScore * 1.1 + defScore * 1.2 + Math.random() * 1;
+                score = offScore * 1.1 + defScore * 1.2 + Math.random() * earlyPenteJitter;
             }
 
+            scoredCandidates.push({ pt: { r, c }, score });
             if (score > bestScore) {
                 bestScore = score;
-                candidates = [{r, c}];
-            } else if (score === bestScore) {
-                candidates.push({r, c});
             }
         }
     }
 
-    if (candidates.length > 0) {
-        return candidates[Math.floor(Math.random() * candidates.length)];
+    if (scoredCandidates.length > 0) {
+        scoredCandidates.sort((a, b) => b.score - a.score);
+        const margin = aiPiecesCount <= 2 ? 18 : 3;
+        const topPool = scoredCandidates.filter(c => bestScore - c.score <= margin);
+        return topPool[Math.floor(Math.random() * topPool.length)].pt;
     }
     
     return {r: 7, c: 7};

@@ -857,7 +857,156 @@ export class SoundManager {
     this.setMuted(muted);
   }
 
+  public static readonly PLAYLIST: { id: string; title: string; artist: string; url: string }[] = [
+    {
+      id: 'original-dub',
+      title: 'Original Dub Groove',
+      artist: 'Wall Go Dub Studio',
+      url: '/reggae-dub.mp3',
+    },
+    {
+      id: 'kingston-city-limits',
+      title: 'Kingston City Limits',
+      artist: 'Antti Luode (CC Instrumental)',
+      url: 'https://archive.org/download/anttisinstrumentals-reggae/anttisinstrumentals%2Bkingstoncitylimits.mp3',
+    },
+    {
+      id: 'sweet-ting-riddim',
+      title: 'Sweet Ting Riddim',
+      artist: 'Beltrán Fernández (Instrumental Riddim)',
+      url: 'https://archive.org/download/SweetTingRiddim/SweetTingRiddim.mp3',
+    },
+    {
+      id: 'island-vibes',
+      title: 'Island Riddim',
+      artist: 'Antti Luode (CC Instrumental)',
+      url: 'https://archive.org/download/anttisinstrumentals-reggae/anttisinstrumentals%2Bisland.mp3',
+    },
+    {
+      id: 'relax-mon',
+      title: 'Relax Mon Dub',
+      artist: 'Antti Luode (CC Instrumental)',
+      url: 'https://archive.org/download/anttisinstrumentals-reggae/anttisinstrumentals%2Brelaxmon.mp3',
+    },
+    {
+      id: 'laid-back',
+      title: 'Laid Back Roots',
+      artist: 'Antti Luode (CC Instrumental)',
+      url: 'https://archive.org/download/anttisinstrumentals-reggae/anttisinstrumentals%2Blaidback.mp3',
+    },
+    {
+      id: 'pegnitz-river-riddim',
+      title: 'Pegnitz River Riddim',
+      artist: 'The Iron Shirt (Instrumental)',
+      url: 'https://archive.org/download/PegnitzRiverRiddim/The%20Iron%20Shirt%20-%20Pegnitz%20River%20Riddim.mp3',
+    },
+    {
+      id: 'beach-day',
+      title: 'Beach Day Skank',
+      artist: 'Antti Luode (CC Instrumental)',
+      url: 'https://archive.org/download/anttisinstrumentals-reggae/anttisinstrumentals%2Bbeachday.mp3',
+    },
+    {
+      id: 'lion-to-zion',
+      title: 'Lion To Zion Dub',
+      artist: 'Gradozero (Instrumental Dub)',
+      url: 'https://archive.org/download/LiontozionReggaeGradozero/LionToZionInstrumental.mp3',
+    },
+    {
+      id: 'take-it-easy',
+      title: 'Take It Easy Skank',
+      artist: 'Antti Luode (CC Instrumental)',
+      url: 'https://archive.org/download/anttisinstrumentals-reggae/anttisinstrumentals%2Btakeiteasy.mp3',
+    },
+  ];
+
+  private static currentTrackIndex: number = 0;
+  private static isContinuousPlaylist: boolean = true;
+  private static trackListeners: Set<() => void> = new Set();
   private static isUnlockAttached = false;
+
+  static subscribeTrackChange(listener: () => void): () => void {
+    this.trackListeners.add(listener);
+    return () => {
+      this.trackListeners.delete(listener);
+    };
+  }
+
+  private static notifyTrackListeners() {
+    this.trackListeners.forEach((fn) => {
+      try {
+        fn();
+      } catch (e) {}
+    });
+  }
+
+  static getCurrentTrack() {
+    return this.PLAYLIST[this.currentTrackIndex] || this.PLAYLIST[0];
+  }
+
+  static getCurrentTrackIndex(): number {
+    return this.currentTrackIndex;
+  }
+
+  static getIsContinuousPlaylist(): boolean {
+    return this.isContinuousPlaylist;
+  }
+
+  static setContinuousPlaylist(enabled: boolean) {
+    this.isContinuousPlaylist = enabled;
+    try {
+      localStorage.setItem('wallgo_reggae_continuous', enabled ? 'true' : 'false');
+    } catch (e) {}
+    if (this.reggaeAudio) {
+      this.reggaeAudio.loop = !enabled;
+    }
+    this.notifyTrackListeners();
+  }
+
+  private static resolveTrackUrl(rawUrl: string): string {
+    if (rawUrl.startsWith('http://') || rawUrl.startsWith('https://')) {
+      return rawUrl;
+    }
+    const clean = rawUrl.replace(/^\//, '');
+    return typeof window !== 'undefined'
+      ? new URL(clean, window.location.href).href
+      : rawUrl;
+  }
+
+  static selectTrack(index: number, autoPlay: boolean = true) {
+    const safeIdx = ((index % this.PLAYLIST.length) + this.PLAYLIST.length) % this.PLAYLIST.length;
+    this.currentTrackIndex = safeIdx;
+    try {
+      localStorage.setItem('wallgo_reggae_track_idx', String(safeIdx));
+    } catch (e) {}
+
+    const track = this.PLAYLIST[safeIdx];
+    if (!this.reggaeAudio) {
+      this.initAudioElement();
+    }
+    if (this.reggaeAudio && track) {
+      this.reggaeAudio.src = this.resolveTrackUrl(track.url);
+      this.reggaeAudio.loop = !this.isContinuousPlaylist;
+      const storedVolume = localStorage.getItem('wallgo_music_volume');
+      const vol = storedVolume !== null ? parseInt(storedVolume, 10) : 100;
+      this.reggaeAudio.volume = Math.max(0, Math.min(1, vol / 100)) * 0.6;
+      if (autoPlay && this.isMusicEnabled && vol > 0) {
+        this.reggaeAudio.play().catch((e) => {
+          console.warn('Could not play selected Reggae track automatically:', e);
+          this.setupAutoplayUnlock();
+        });
+      }
+    }
+    this.notifyTrackListeners();
+  }
+
+  static nextTrack() {
+    this.selectTrack(this.currentTrackIndex + 1, true);
+  }
+
+  static prevTrack() {
+    this.selectTrack(this.currentTrackIndex - 1, true);
+  }
 
   private static setupAutoplayUnlock() {
     if (typeof window === 'undefined') return;
@@ -884,43 +1033,77 @@ export class SoundManager {
     }
   }
 
+  private static initAudioElement() {
+    try {
+      const savedIdx = localStorage.getItem('wallgo_reggae_track_idx');
+      if (savedIdx !== null) {
+        const parsed = parseInt(savedIdx, 10);
+        if (!isNaN(parsed) && parsed >= 0 && parsed < this.PLAYLIST.length) {
+          this.currentTrackIndex = parsed;
+        }
+      }
+      const savedContinuous = localStorage.getItem('wallgo_reggae_continuous');
+      if (savedContinuous !== null) {
+        this.isContinuousPlaylist = savedContinuous !== 'false';
+      }
+    } catch (e) {}
+
+    const track = this.getCurrentTrack();
+    this.reggaeAudio = new Audio(this.resolveTrackUrl(track.url));
+    this.reggaeAudio.crossOrigin = 'anonymous';
+    this.reggaeAudio.loop = !this.isContinuousPlaylist;
+
+    this.reggaeAudio.onended = () => {
+      if (this.isContinuousPlaylist && this.isMusicEnabled) {
+        this.nextTrack();
+      }
+    };
+
+    this.reggaeAudio.onerror = (e) => {
+      console.warn('Reggae stream error on track, falling back to next or local dub track', e);
+      if (this.currentTrackIndex !== 0) {
+        // Fallback to local /reggae-dub.mp3 if offline or remote stream unavailable
+        this.currentTrackIndex = 0;
+        if (this.reggaeAudio) {
+          this.reggaeAudio.src = this.resolveTrackUrl('/reggae-dub.mp3');
+          if (this.isMusicEnabled) {
+            this.reggaeAudio.play().catch(() => {});
+          }
+        }
+        this.notifyTrackListeners();
+      }
+    };
+  }
+
   static async startBackgroundMusic(targetVolume?: number) {
     this.isMusicEnabled = true;
     this.setupAutoplayUnlock();
     await this.resume();
     if (!this.isMusicEnabled) return;
-    
+
     if (!this.reggaeAudio) {
-      const audioUrl = typeof window !== 'undefined' 
-        ? new URL('reggae-dub.mp3', window.location.href).href 
-        : 'reggae-dub.mp3';
-      this.reggaeAudio = new Audio(audioUrl);
-      this.reggaeAudio.loop = true;
-      this.reggaeAudio.onerror = (e) => {
-        console.warn('Primary reggaeAudio error, trying fallback path', e);
-        if (this.reggaeAudio) {
-          this.reggaeAudio.src = '/reggae-dub.mp3';
-        }
-      };
+      this.initAudioElement();
     }
 
     const storedVolume = localStorage.getItem('wallgo_music_volume');
-    const vol = targetVolume !== undefined 
-      ? targetVolume 
+    const vol = targetVolume !== undefined
+      ? targetVolume
       : (storedVolume !== null ? parseInt(storedVolume, 10) : 100);
-    
-    const normalized = Math.max(0, Math.min(1, vol / 100));
-    this.reggaeAudio.volume = normalized * 0.6; 
 
-    if (vol > 0) {
-      if (this.reggaeAudio.paused) {
-        this.reggaeAudio.play().catch(e => {
-          console.warn('Could not play mp3 automatically, interaction unlock active', e);
-          this.setupAutoplayUnlock();
-        });
+    const normalized = Math.max(0, Math.min(1, vol / 100));
+    if (this.reggaeAudio) {
+      this.reggaeAudio.volume = normalized * 0.6;
+
+      if (vol > 0) {
+        if (this.reggaeAudio.paused) {
+          this.reggaeAudio.play().catch(e => {
+            console.warn('Could not play mp3 automatically, interaction unlock active', e);
+            this.setupAutoplayUnlock();
+          });
+        }
+      } else {
+        this.reggaeAudio.pause();
       }
-    } else {
-      this.reggaeAudio.pause();
     }
   }
 }

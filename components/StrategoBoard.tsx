@@ -1117,7 +1117,7 @@ export const StrategoBoard: React.FC<StrategoBoardProps> = ({
         setSwapTargetPos(null);
         setValidMoves([]);
         setPhase("playing");
-        setTurn("red"); // In official Stratego, Red always makes the first move
+        setTurn("blue"); // Online: invite acceptor (Blue) makes the first move
         setHasGameStarted(true);
         setEarnedPoints(null);
         hasEndedRef.current = false;
@@ -1490,19 +1490,24 @@ export const StrategoBoard: React.FC<StrategoBoardProps> = ({
   // are centered in the visible board arena and never truncated or clipped at the borders.
   // CRITICAL: In setup phase (scambio iniziale), zoom is NEVER active so the player can easily see and swap distant pieces across the board!
   const activeFocus = selectedPos || combatFocusPos;
-  const isZoomed = phase !== "setup" && activeFocus !== null;
-  // Natural 100% board scale: baseline zoom is zoomScale (1.0). When focused on a selected piece or combat, zoom smoothly by 1.35x
-  const effectiveZoom = isZoomed ? Number((zoomScale * 1.35).toFixed(2)) : (phase === "setup" ? 1.0 : zoomScale);
+  const isGameEnded2D = phase === "gameover" || winner !== null;
+  const effectiveTiltAngle = isGameEnded2D ? 0 : tiltAngle;
+  const isZoomed = phase !== "setup" && !isGameEnded2D && activeFocus !== null;
+  // Perspective width compensation so the bottom edge of the 3D tilted board always matches 100% of the top/bottom boxes
+  const tiltFitScale = 1 - 0.165 * Math.sin((effectiveTiltAngle * Math.PI) / 180);
+  const effectiveZoom = isZoomed
+    ? Number((zoomScale * 1.35).toFixed(2))
+    : Number(((phase === "setup" || isGameEnded2D ? 1.0 : zoomScale) * tiltFitScale).toFixed(3));
   const panX = isZoomed && activeFocus
     ? Number((-(((isBoardFlipped ? (9 - activeFocus.c) : activeFocus.c) - 4.5) / 10) * effectiveZoom * 36).toFixed(1))
     : 0;
   const panY = isZoomed && activeFocus
-    ? Number((-(((isBoardFlipped ? (9 - activeFocus.r) : activeFocus.r) - 4.5) / 10) * effectiveZoom * Math.cos((tiltAngle * Math.PI) / 180) * 30).toFixed(1))
+    ? Number((-(((isBoardFlipped ? (9 - activeFocus.r) : activeFocus.r) - 4.5) / 10) * effectiveZoom * Math.cos((effectiveTiltAngle * Math.PI) / 180) * 30).toFixed(1))
     : 0;
 
   // Touch Pinch-to-zoom & tilt gesture handlers (disables CSS transitions during touch gestures for flicker-free fluidity)
   const handleBoardTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
-    if (phase === "setup") return; // Keep stable full board view during setup
+    if (phase === "setup" || isGameEnded2D) return; // Keep stable full board view during setup or gameover
     if (e.touches.length === 2) {
       setIsPinching(true);
       const t1 = e.touches[0];
@@ -1514,7 +1519,7 @@ export const StrategoBoard: React.FC<StrategoBoardProps> = ({
   };
 
   const handleBoardTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
-    if (phase === "setup") return; // Keep stable full board view during setup
+    if (phase === "setup" || isGameEnded2D) return; // Keep stable full board view during setup or gameover
     if (e.touches.length === 2 && touchPinchRef.current) {
       const t1 = e.touches[0];
       const t2 = e.touches[1];
@@ -1541,7 +1546,7 @@ export const StrategoBoard: React.FC<StrategoBoardProps> = ({
   };
 
   const handleBoardWheel = (e: React.WheelEvent<HTMLDivElement>) => {
-    if (phase === "setup") return; // Keep stable full board view during setup
+    if (phase === "setup" || isGameEnded2D) return; // Keep stable full board view during setup or gameover
     if (e.ctrlKey || e.metaKey || e.shiftKey) {
       // Trackpad pinch zoom
       e.preventDefault();
@@ -2852,27 +2857,27 @@ export const StrategoBoard: React.FC<StrategoBoardProps> = ({
               <span className="font-black uppercase tracking-wider text-white text-[11px] sm:text-xs truncate">
                 {onlineMatchSession
                   ? turn === myColor
-                    ? moveCount === 0 && myColor === "red"
+                    ? moveCount === 0 && myColor === "blue"
                       ? language === "it"
-                        ? "⚔️ Tuo Turno (Prima mossa al Rosso)"
+                        ? "⚔️ Tuo Turno (Prima mossa al Blu)"
                         : language === "es"
-                        ? "⚔️ Tu Turno (Primer movimiento al Rojo)"
+                        ? "⚔️ Tu Turno (Primer movimiento al Azul)"
                         : language === "fr"
-                        ? "⚔️ Votre Tour (Premier coup au Rouge)"
+                        ? "⚔️ Votre Tour (Premier coup au Bleu)"
                         : language === "de"
-                        ? "⚔️ Ihr Zug (Rot beginnt)"
-                        : "⚔️ Your Turn (Red moves first)"
+                        ? "⚔️ Ihr Zug (Blau beginnt)"
+                        : "⚔️ Your Turn (Blue moves first)"
                       : `⚔️ ${st.yourTurn}`
-                    : moveCount === 0 && turn === "red"
+                    : moveCount === 0 && turn === "blue"
                     ? language === "it"
-                      ? `⏳ Prima mossa a ${onlineMatchSession.opponentName} (Rosso)...`
+                      ? `⏳ Prima mossa a ${onlineMatchSession.opponentName} (Blu)...`
                       : language === "es"
-                      ? `⏳ Primer movimiento: ${onlineMatchSession.opponentName} (Rojo)...`
+                      ? `⏳ Primer movimiento: ${onlineMatchSession.opponentName} (Azul)...`
                       : language === "fr"
-                      ? `⏳ Premier coup : ${onlineMatchSession.opponentName} (Rouge)...`
+                      ? `⏳ Premier coup : ${onlineMatchSession.opponentName} (Bleu)...`
                       : language === "de"
-                      ? `⏳ Erster Zug: ${onlineMatchSession.opponentName} (Rot)...`
-                      : `⏳ First move: ${onlineMatchSession.opponentName} (Red)...`
+                      ? `⏳ Erster Zug: ${onlineMatchSession.opponentName} (Blau)...`
+                      : `⏳ First move: ${onlineMatchSession.opponentName} (Blue)...`
                     : `⏳ ${onlineMatchSession.opponentName}...`
                   : turn === "red"
                   ? `⚔️ ${st.yourTurn}`
@@ -3224,7 +3229,7 @@ export const StrategoBoard: React.FC<StrategoBoardProps> = ({
         >
           {/* 3D Perspective Board Container (Hardware Accelerated & Mobile Optimized) */}
           <div
-            className="relative flex items-center justify-center w-full h-full max-w-lg aspect-square p-1 sm:p-2"
+            className="relative flex items-center justify-center w-full h-full aspect-square px-0 py-1"
             style={{
               perspective: "1100px",
               WebkitPerspective: "1100px",
@@ -3237,7 +3242,7 @@ export const StrategoBoard: React.FC<StrategoBoardProps> = ({
                   : "bg-gradient-to-b from-stone-800 via-stone-900 to-black border-2 sm:border-4 border-amber-900/60 shadow-[0_10px_30px_rgba(0,0,0,0.9),0_0_20px_rgba(180,83,9,0.2)]"
               }`}
               style={{
-                transform: `translate3d(${panX.toFixed(1)}%, ${panY.toFixed(1)}%, 0px) rotateX(${tiltAngle}deg) scale(${effectiveZoom.toFixed(3)})`,
+                transform: `translate3d(${panX.toFixed(1)}%, ${panY.toFixed(1)}%, 0px) rotateX(${effectiveTiltAngle}deg) scale(${effectiveZoom.toFixed(3)})`,
                 transformOrigin: "50% 50%",
                 WebkitTransformOrigin: "50% 50%",
                 transition: isPinching ? "none" : "transform 500ms cubic-bezier(0.22, 1, 0.36, 1)",
@@ -3442,7 +3447,7 @@ export const StrategoBoard: React.FC<StrategoBoardProps> = ({
                           battleResult={activeDuel.battleResult}
                           fromPos={activeDuel.fromPos}
                           targetPos={activeDuel.targetPos}
-                          tiltAngle={tiltAngle}
+                          tiltAngle={effectiveTiltAngle}
                           isBoardFlipped={isBoardFlipped}
                           language={language}
                           onComplete={() => handleDuelComplete(activeDuel)}
@@ -3469,7 +3474,7 @@ export const StrategoBoard: React.FC<StrategoBoardProps> = ({
                             rank={animatingMove.piece.rank}
                             isRevealed={animatingMove.piece.revealedToOpponent}
                             isAdminReveal={revealEnemyAdmin}
-                            tiltAngle={tiltAngle}
+                            tiltAngle={effectiveTiltAngle}
                             isSelected={true}
                             isHovered={false}
                             isLocalPlayerPiece={animatingMove.piece.player === myColor}
@@ -3485,7 +3490,7 @@ export const StrategoBoard: React.FC<StrategoBoardProps> = ({
                           rank={piece.rank}
                           isRevealed={piece.revealedToOpponent}
                           isAdminReveal={revealEnemyAdmin}
-                          tiltAngle={tiltAngle}
+                          tiltAngle={effectiveTiltAngle}
                           isSelected={isSelected}
                           isHovered={isHovered}
                           isLocalPlayerPiece={piece.player === myColor}

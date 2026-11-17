@@ -1,6 +1,6 @@
 
 import { Point, Player, PlayerId, Wall, BoardTheme, GameMode, Language } from '../types';
-import { GRID_SIZE } from '../constants';
+import { GRID_SIZE, PLAYER_COLORS } from '../constants';
 
 export const serializeWall = (r1: number, c1: number, r2: number, c2: number): string => {
   const p1 = `${r1},${c1}`;
@@ -467,9 +467,26 @@ export const hasPathToGoal = (start: Point, playerId: PlayerId, walls: Wall[], a
   return false;
 };
 
+export const VALID_DOMINIO_THEMES: BoardTheme[] = [
+  'neon',
+  'islands',
+  'desert',
+  'hourglass',
+  'bridge',
+  'hammer',
+  'arena',
+];
+
+export const sanitizeDominioTheme = (theme?: BoardTheme | string | null): BoardTheme => {
+  if (theme && VALID_DOMINIO_THEMES.includes(theme as BoardTheme)) {
+    return theme as BoardTheme;
+  }
+  return 'neon';
+};
+
 export const canPhysicallyMove = (player: Player, walls: Wall[], allPlayers: Player[], theme: BoardTheme, gameMode?: GameMode): boolean => {
   if (theme === 'hex' || theme === 'orbito' || theme === 'abalone' || theme === 'pente' || theme === 'yinsh' || theme.startsWith('baduk') || gameMode === 'orbito' || gameMode === 'abalone' || gameMode === 'pente' || gameMode === 'yinsh' || gameMode === 'baduk') return true;
-  if (theme === 'domineering') {
+  if (theme === 'domineering' || gameMode === 'domineering') {
     const isV = player.id === 1; // ID 1 is vertical (first player), ID 2 is horizontal
     const occupied = new Set<string>();
     allPlayers.forEach(p => p.positions.forEach(pos => occupied.add(`${pos.r},${pos.c}`)));
@@ -538,9 +555,18 @@ export const canPhysicallyMove = (player: Player, walls: Wall[], allPlayers: Pla
     return false;
   }
 
+  const isAmazons = gameMode === 'amazons' || theme.startsWith('amazons');
+  const isCorsa = gameMode === 'corsa' || (gameMode === undefined && theme === 'corsa' && allPlayers.every(p => p.positions.length <= 1));
+
   return player.positions.some(pos => {
-    const reachable = getReachableCells(pos, walls, allPlayers, theme.startsWith('amazons') ? Infinity : 2, theme, gameMode, undefined);
-    return (theme.startsWith('amazons') || theme === 'corsa') ? reachable.length > 0 : reachable.length > 1;
+    const reachable = getReachableCells(pos, walls, allPlayers, isAmazons ? Infinity : 2, theme, gameMode, undefined);
+    if (isAmazons || isCorsa) {
+      return reachable.length > 0;
+    }
+    // In Wall Go (dominio), reachable always includes the starting cell (dist === 0).
+    // A pawn can physically act if it can move to another cell (reachable.length > 1)
+    // OR stay in its current cell and place a wall on at least one free edge.
+    return reachable.length > 1 || getWallOptions(pos, walls, theme, allPlayers, gameMode).length > 0;
   });
 };
 
@@ -553,15 +579,17 @@ export const calculateTerritory = (
   walls: Wall[],
   players: Player[],
   theme: BoardTheme,
-  deadStonesInput?: Set<string> | string[]
+  deadStonesInput?: Set<string> | string[],
+  gameMode?: GameMode
 ) => {
   const scores = {} as Record<PlayerId, number>;
   const enclosed = {} as Record<PlayerId, boolean>;
   const territoryMap: Record<string, PlayerId> = {};
   
   // Quoridor (corsa) is a race game, NOT a territory enclosure game.
-  // There are no territories, no enclosures, and no territory coloring in Quoridor.
-  if (theme === 'corsa') {
+  // Only skip territory calculation when the match is actually Quoridor (1 pawn per player or gameMode === 'corsa').
+  const isActualCorsa = gameMode === 'corsa' || (gameMode !== 'dominio' && theme === 'corsa' && players.every(p => p.positions.length <= 1));
+  if (isActualCorsa) {
     return {
       scores: { 1: 0, 2: 0, 3: 0, 4: 0 } as Record<PlayerId, number>,
       enclosed: { 1: false, 2: false, 3: false, 4: false } as Record<PlayerId, boolean>,
@@ -724,13 +752,12 @@ export const calculateTerritory = (
   let hexWinner: PlayerId | null = null;
   if (theme === 'hex') {
     const checkWin = (playerId: PlayerId) => {
-      const isP1 = playerId === 1;
+      const pData = players.find(p => p.id === playerId);
+      if (!pData) return false;
+      const isP1 = pData.color ? pData.color === PLAYER_COLORS[1] : playerId === 1;
       const queue: Point[] = [];
       const visited = new Set<string>();
       const playerPos = new Set<string>();
-      
-      const pData = players.find(p => p.id === playerId);
-      if (!pData) return false;
       
       pData.positions.forEach(p => {
         playerPos.add(`${p.r},${p.c}`);

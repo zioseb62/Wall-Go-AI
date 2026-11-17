@@ -38,6 +38,7 @@ import {
   checkPenteWinner,
   getAbaloneStartingPositions,
   ALL_ABALONE_THEMES,
+  sanitizeDominioTheme,
 } from "./utils/gameLogic";
 import {
   getBestMoveForAI,
@@ -57,6 +58,19 @@ import ChainTriangleBoard from "./components/ChainTriangleBoard";
 import YinshBoard from "./components/YinshBoard";
 import OnitamaBoard from "./components/OnitamaBoard";
 import StrategoBoard, { StrategoDifficulty, StrategoStarter } from "./components/StrategoBoard";
+import QuartoBoard, { Quarto3DPiece } from "./components/QuartoBoard";
+import { createInitialQuartoState, checkQuartoWin, getBestQuartoMoveForAI } from "./utils/quartoLogic";
+import PylosBoard from "./components/PylosBoard";
+import {
+  createInitialPylosState,
+  applyPylosPlace,
+  applyPylosRaise,
+  applyPylosRecoverSphere,
+  finishPylosRecovery,
+  getBestPylosMoveForAI,
+  PylosCoord,
+  PylosState,
+} from "./utils/pylosLogic";
 import { historyData } from "./utils/historyData";
 import { createInitialYinshState, getValidYinshMoves, performYinshMove, checkYinshLines, getBestYinshMoveForAI } from "./utils/yinshLogic";
 import { createInitialOnitamaState, ONITAMA_CARDS, getBestOnitamaMoveForAI } from "./onitama";
@@ -80,7 +94,7 @@ import { insertSimulatedPlayerToLeaderboard, pruneExpiredSimulatedPlayers } from
 import { PWAInstallButton } from "./components/PWAInstallButton";
 import { IncomingInviteModal, IncomingInviteData } from "./components/IncomingInviteModal";
 import { PostOnlineMatchModal } from "./components/PostOnlineMatchModal";
-import { Radio, Maximize, Minimize, LogOut } from "lucide-react";
+import { Radio, Maximize, Minimize, LogOut, Settings } from "lucide-react";
 
 import { db } from "./firebase";
 import {
@@ -139,7 +153,7 @@ const calculatePointsSpent = (unlockedModes: string[] | undefined, userName: str
   
   const FREE_MODES = [
     "dominio", "pente", "amazons", "corsa", "domineering", 
-    "abalone", "hex", "orbito", "chain_triangle", "yinsh", "baduk", "onitama", "shobu"
+    "abalone", "hex", "orbito", "chain_triangle", "yinsh", "baduk", "onitama", "shobu", "quarto", "pylos"
   ];
   
   let spent = 0;
@@ -152,6 +166,14 @@ const calculatePointsSpent = (unlockedModes: string[] | undefined, userName: str
   return spent;
 };
 
+const sanitizeZioSebWallGoScore = (name: string | undefined | null, score: number | undefined | null): number => {
+  const numScore = Number(score) || 0;
+  if (name && name.trim().toLowerCase() === "zioseb" && numScore > 2400) {
+    return Number((numScore - 1180.8211157937977).toFixed(6));
+  }
+  return numScore;
+};
+
 const DEFAULT_STATS: PlayerStats = {
   2: { wins: 0, losses: 0, hardWins: 0 },
   3: { wins: 0, losses: 0, hardWins: 0 },
@@ -160,8 +182,10 @@ const DEFAULT_STATS: PlayerStats = {
   totalScore: 0,
   totalShobuScore: 0,
   totalOnitamaScore: 0,
-  unlockedModes: ["dominio", "baduk"],
+  unlockedModes: ["dominio", "baduk", "quarto", "pylos"],
   totalPenteScore: 0,
+  totalQuartoScore: 0,
+  totalPylosScore: 0,
 };
 
 const BADGE_POINTS: Record<string, number> = {
@@ -182,9 +206,13 @@ const BADGE_POINTS: Record<string, number> = {
   pente_extreme: 30,
   domineering_extreme: 30,
   stratego_master: 30,
+  quarto_hard: 20,
+  pylos_hard: 20,
 };
 
 const getStatKeyForMode = (mode: string): string => {
+  if (mode === "quarto") return "quartoStats";
+  if (mode === "pylos") return "pylosStats";
   if (mode === "stratego") return "strategoStats";
   if (mode === "onitama") return "onitamaStats";
   if (mode === "shobu") return "shobuStats";
@@ -212,13 +240,17 @@ const getOnlineMatchWinPoints = (mode: GameMode | string, theme?: BoardTheme): n
   }
   if (mode === "orbito" || mode === "chain_triangle") return 10;
   if (mode === "pente" || mode === "hex") return 15;
-  if (mode === "abalone" || mode === "onitama" || mode === "domineering" || mode === "shobu" || mode === "corsa" || mode === "dominio") return 20;
+  if (mode === "abalone" || mode === "onitama" || mode === "domineering" || mode === "shobu" || mode === "quarto" || mode === "pylos" || mode === "corsa" || mode === "dominio") return 20;
   return 20;
 };
 
 const applyModeScore = (currentStats: PlayerStats, mode: GameMode | string, delta: number): PlayerStats => {
   const updated = { ...currentStats };
-  if (mode === "stratego") {
+  if (mode === "quarto") {
+    updated.totalQuartoScore = Math.max(0, (updated.totalQuartoScore || 0) + delta);
+  } else if (mode === "pylos") {
+    updated.totalPylosScore = Math.max(0, (updated.totalPylosScore || 0) + delta);
+  } else if (mode === "stratego") {
     updated.totalStrategoScore = Math.max(0, (updated.totalStrategoScore || 0) + delta);
   } else if (mode === "amazons") {
     updated.totalAmazonsScore = Math.max(0, (updated.totalAmazonsScore || 0) + delta);
@@ -282,26 +314,21 @@ const App: React.FC = () => {
         : "amazons-6";
     if (initialGameMode === "onitama") return savedTheme === "onitama-light" ? "onitama-light" : "onitama-dark";
     if (initialGameMode === "baduk") return savedTheme && savedTheme.startsWith("baduk") ? savedTheme : "baduk-9";
-    return savedTheme &&
-      !savedTheme.startsWith("abalone") &&
-      !savedTheme.startsWith("amazons") &&
-      !savedTheme.startsWith("shobu") &&
-      !savedTheme.startsWith("baduk") &&
-      !savedTheme.startsWith("onitama") &&
-      savedTheme !== "domineering" &&
-      savedTheme !== "corsa" &&
-      savedTheme !== "hex" &&
-      savedTheme !== "orbito" &&
-      savedTheme !== "pente" &&
-      savedTheme !== "chain_triangle"
-      ? savedTheme
-      : "neon";
+    if (initialGameMode === "quarto") return "quarto";
+    if (initialGameMode === "pylos") return "pylos";
+    return sanitizeDominioTheme(savedTheme);
   };
 
   const [boardTheme, setBoardTheme] =
     useState<BoardTheme>(getInitialBoardTheme);
   const [badukStoneColor, setBadukStoneColor] = useState<"neon" | "classic">(() => {
     return (localStorage.getItem("wallgo_baduk_stone_color") as "neon" | "classic") || "classic";
+  });
+  const [quartoBoardStyle, setQuartoBoardStyle] = useState<"neon" | "classic">(() => {
+    return (localStorage.getItem("wallgo_quarto_board_style") as "neon" | "classic") || "classic";
+  });
+  const [pylosBoardStyle, setPylosBoardStyle] = useState<"neon" | "classic">(() => {
+    return (localStorage.getItem("wallgo_pylos_board_style") as "neon" | "classic") || "classic";
   });
   const [isRandomAbaloneTheme, setIsRandomAbaloneTheme] = useState<boolean>(
     () => {
@@ -379,6 +406,7 @@ const App: React.FC = () => {
   const [postOnlineInviteSession, setPostOnlineInviteSession] = useState<OnlineMatchSession | null>(null);
   const [incomingInvite, setIncomingInvite] = useState<IncomingInviteData | null>(null);
   const previousOnlineTurnCount = useRef<number>(-1);
+  const hasOnlineLocalMoveRef = useRef<boolean>(false);
   const processedOnlineEndRoomsRef = useRef<Set<string>>(new Set());
 
   // Salvataggio e ripresa dedicati per partite multiplayer a Baduk/Go
@@ -453,7 +481,13 @@ useEffect(() => {
     () => localStorage.getItem("hasSeenOrbitoRules") === "true",
   );
   const [startingPreference, setStartingPreference] =
-    useState<StartingPlayerPreference>("human");
+    useState<StartingPlayerPreference>(() => {
+      try {
+        const saved = localStorage.getItem("wallgo_starting_pref");
+        if (saved === "human" || saved === "ai" || saved === "random") return saved;
+      } catch (e) {}
+      return "human";
+    });
   const [isStartingPreferenceEnabled, setIsStartingPreferenceEnabled] =
     useState(true);
   const [isAIThinking, setIsAIThinking] = useState(false);
@@ -462,13 +496,31 @@ useEffect(() => {
   const [aiTrace, setAiTrace] = useState<{ from: Point; to: Point } | null>(
     null,
   );
+  const [orbitoTiltX, setOrbitoTiltX] = useState<number>(34);
+  const [orbitoRotateZ, setOrbitoRotateZ] = useState<number>(-10);
+  const [isDraggingOrbito3D, setIsDraggingOrbito3D] = useState<boolean>(false);
+  const wasOrbitoEndedRef = useRef<boolean>(false);
+  const orbitoDragRef = useRef<{
+    active: boolean;
+    lastX: number;
+    lastY: number;
+    totalDist: number;
+    wasDragged: boolean;
+  }>({
+    active: false,
+    lastX: 0,
+    lastY: 0,
+    totalDist: 0,
+    wasDragged: false,
+  });
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isAppSettingsOpen, setIsAppSettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<"general" | "account">(
     "general",
   );
   const [isRulesOpen, setIsRulesOpen] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
-  const [historyMode, setHistoryMode] = useState<GameMode | null>(null);
+  const [historyMode, setHistoryMode] = useState<GameMode | "pylos" | null>(null);
   const [isOrbitoRulesOpen, setIsOrbitoRulesOpen] = useState(false);
   const [isPenteRulesOpen, setIsPenteRulesOpen] = useState(false);
   const [isShobuRulesOpen, setIsShobuRulesOpen] = useState(false);
@@ -476,6 +528,16 @@ useEffect(() => {
   const [isOnitamaRulesOpen, setIsOnitamaRulesOpen] = useState(false);
   const [isBadukRulesOpen, setIsBadukRulesOpen] = useState(false);
   const [isStrategoRulesOpen, setIsStrategoRulesOpen] = useState(false);
+  const [isQuartoRulesOpen, setIsQuartoRulesOpen] = useState(false);
+  const [isPylosRulesOpen, setIsPylosRulesOpen] = useState(false);
+  const [isPylosPreviewOpen, setIsPylosPreviewOpen] = useState(false);
+  const [pylosLineVariant, setPylosLineVariant] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem("wallgo_pylos_line_variant") === "true";
+    } catch (e) {
+      return false;
+    }
+  });
   const [strategoDifficulty, setStrategoDifficulty] = useState<StrategoDifficulty>("medium");
   const [strategoStarter, setStrategoStarter] = useState<"human" | "ai" | "random">("human");
   const [strategoPreset, setStrategoPreset] = useState<string>(() => {
@@ -602,11 +664,75 @@ useEffect(() => {
   }, []);
   const [deviceId, setDeviceId] = useState("");
   const [isRegistrationOpen, setIsRegistrationOpen] = useState(false);
+  const [requirePointsToUnlock, setRequirePointsToUnlock] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem("wallgo_require_points_to_unlock") === "true";
+    } catch {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    if (!db) return;
+    const configRef = doc(db, "app_config", "global");
+    const unsub = onSnapshot(
+      configRef,
+      (snap) => {
+        const enabled = snap.exists() ? Boolean(snap.data()?.requirePointsToUnlock) : false;
+        setRequirePointsToUnlock(enabled);
+        try {
+          localStorage.setItem("wallgo_require_points_to_unlock", enabled ? "true" : "false");
+        } catch {}
+      },
+      (err) => {
+        console.error(
+          "Firestore Error [get app_config/global]:",
+          JSON.stringify({
+            error: err instanceof Error ? err.message : String(err),
+            operationType: "get",
+            path: "app_config/global",
+          }),
+        );
+      },
+    );
+    return () => unsub();
+  }, []);
+
+  const handleToggleRequirePointsToUnlock = useCallback(async (enabled: boolean) => {
+    setRequirePointsToUnlock(enabled);
+    try {
+      localStorage.setItem("wallgo_require_points_to_unlock", enabled ? "true" : "false");
+    } catch {}
+    if (!db) return;
+    try {
+      await setDoc(
+        doc(db, "app_config", "global"),
+        {
+          requirePointsToUnlock: enabled,
+          updatedAt: new Date().toISOString(),
+        },
+        { merge: true },
+      );
+    } catch (err) {
+      console.error(
+        "Firestore Error [write app_config/global]:",
+        JSON.stringify({
+          error: err instanceof Error ? err.message : String(err),
+          operationType: "write",
+          path: "app_config/global",
+        }),
+      );
+      throw err;
+    }
+  }, []);
+
   const [stats, setStats] = useState<PlayerStats>(DEFAULT_STATS);
   const isModeUnlocked = useCallback((mode: string) => {
+    if (!requirePointsToUnlock) return true;
+    if (mode === "quarto" || mode === "stratego" || mode === "dominio" || mode === "baduk" || mode === "pylos") return true;
     if (isTester && userEmail.toLowerCase().includes("@gmail.com")) return true;
     return (stats.unlockedModes && stats.unlockedModes.includes(mode as GameMode)) || (stats.freeUnlockedModes && stats.freeUnlockedModes.includes(mode as GameMode));
-  }, [isTester, userEmail, stats.unlockedModes, stats.freeUnlockedModes]);
+  }, [requirePointsToUnlock, isTester, userEmail, stats.unlockedModes, stats.freeUnlockedModes]);
 
   const [cloudScore, setCloudScore] = useState<number | null>(null);
 
@@ -769,6 +895,8 @@ useEffect(() => {
         });
       }
 
+      const sanitizedWallGoScore = sanitizeZioSebWallGoScore(targetUserName, targetStats.totalScore);
+
       await setDoc(deviceRef, {
         userName: targetUserName,
         userLocation: targetUserLocation,
@@ -779,7 +907,7 @@ useEffect(() => {
         osVersion: info.osVersion,
         model: info.model,
         platform: info.platform,
-        totalScore: targetStats.totalScore || 0,
+        totalScore: sanitizedWallGoScore,
         totalFugaScore: targetStats.totalFugaScore || 0,
         totalAmazonsScore: targetStats.totalAmazonsScore || 0,
         totalDomineeringScore: targetStats.totalDomineeringScore || 0,
@@ -850,13 +978,15 @@ useEffect(() => {
       const orbitoGames = calcGamesObj(targetStats.orbitoStats);
       const badukGames = calcGamesObj(targetStats.badukStats);
       const strategoGames = calcGamesObj(targetStats.strategoStats);
+      const quartoGames = calcGamesObj(targetStats.quartoStats);
+      const pylosGames = calcGamesObj(targetStats.pylosStats);
 
-      const totalGamesOverall = baseGames + corsaGames + amazonsGames + domineeringGames + abaloneGames + hexGames + chainTriangleGames + penteGames + shobuGames + yinshGames + onitamaGames + orbitoGames + badukGames + strategoGames;
+      const totalGamesOverall = baseGames + corsaGames + amazonsGames + domineeringGames + abaloneGames + hexGames + chainTriangleGames + penteGames + shobuGames + yinshGames + onitamaGames + orbitoGames + badukGames + strategoGames + quartoGames + pylosGames;
 
       const pointsSpent = calculatePointsSpent(targetStats.unlockedModes || [], targetUserName, targetUserLocation, targetStats.freeUnlockedModes || []);
 
       const totalScoreOverall = Math.max(0,
-        (targetStats.totalScore || 0) +
+        sanitizedWallGoScore +
         (targetStats.totalFugaScore || 0) +
         (targetStats.totalAmazonsScore || 0) +
         (targetStats.totalDomineeringScore || 0) +
@@ -869,12 +999,14 @@ useEffect(() => {
         (targetStats.totalOnitamaScore || 0) +
         (targetStats.totalOrbitoScore || 0) +
         (targetStats.totalBadukScore || 0) +
-        (targetStats.totalStrategoScore || 0) - pointsSpent
+        (targetStats.totalStrategoScore || 0) +
+        (targetStats.totalQuartoScore || 0) +
+        (targetStats.totalPylosScore || 0) - pointsSpent
       );
 
       await setDoc(doc(db, "leaderboard", newSlug), {
         userName: displayName,
-        totalScore: targetStats.totalScore || 0,
+        totalScore: sanitizedWallGoScore,
         totalFugaScore: targetStats.totalFugaScore || 0,
         totalAmazonsScore: targetStats.totalAmazonsScore || 0,
         totalDomineeringScore: targetStats.totalDomineeringScore || 0,
@@ -888,6 +1020,8 @@ useEffect(() => {
         totalOrbitoScore: targetStats.totalOrbitoScore || 0,
         totalBadukScore: targetStats.totalBadukScore || 0,
         totalStrategoScore: targetStats.totalStrategoScore || 0,
+        totalQuartoScore: targetStats.totalQuartoScore || 0,
+        totalPylosScore: targetStats.totalPylosScore || 0,
         totalScoreOverall: totalScoreOverall,
         totalGamesOverall: totalGamesOverall,
         totalGamesTarget: {
@@ -905,6 +1039,8 @@ useEffect(() => {
           orbito: orbitoGames,
           baduk: badukGames,
           stratego: strategoGames,
+          quarto: quartoGames,
+          pylos: pylosGames,
         },
         lastActive: now,
       }, { merge: true });
@@ -1066,7 +1202,13 @@ useEffect(() => {
             : userName.toLowerCase().replace(/[^a-z0-9]/g, "_");
           const d = await getDoc(doc(db, "leaderboard", slug));
           if (d.exists() && d.data().totalScoreOverall !== undefined) {
-            setCloudScore(d.data().totalScoreOverall);
+            const lbData = d.data();
+            let overall = Number(lbData.totalScoreOverall) || 0;
+            if (userName.trim().toLowerCase() === "zioseb" && typeof lbData.totalScore === "number" && lbData.totalScore > 2400) {
+              const cleanBase = sanitizeZioSebWallGoScore(userName, lbData.totalScore);
+              overall = Math.max(0, overall - (lbData.totalScore - cleanBase));
+            }
+            setCloudScore(overall);
           }
         } catch (e) {
           console.error("Failed to fetch cloud score:", e);
@@ -1109,6 +1251,7 @@ useEffect(() => {
   const homeCarouselRef = useRef<HTMLDivElement | null>(null);
   const homeTouchStartX = useRef<number | null>(null);
   const homeTouchStartY = useRef<number | null>(null);
+  const homeMouseDidDrag = useRef<boolean>(false);
 
   const scrollToHomeSlide = (slideIndex: number) => {
     setHomePageSlide(slideIndex);
@@ -1143,16 +1286,72 @@ useEffect(() => {
       const deltaY = e.changedTouches[0].clientY - homeTouchStartY.current;
       if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 35) {
         if (deltaX < 0) {
-          // Swiped left -> scroll to Slide 1 (Chain Triangle)
+          // Swiped left -> scroll to Slide 1 (2nd Page)
           scrollToHomeSlide(1);
         } else {
-          // Swiped right -> scroll to Slide 0 (13 Giochi)
+          // Swiped right -> scroll to Slide 0 (1st Page)
           scrollToHomeSlide(0);
         }
       }
       homeTouchStartX.current = null;
       homeTouchStartY.current = null;
     }
+  };
+
+  const handleHomeMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (e.button !== 0 || !homeCarouselRef.current) return;
+    const container = homeCarouselRef.current;
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const startScrollLeft = container.scrollLeft;
+    const startSlide = homePageSlide;
+    let isDragging = false;
+    homeMouseDidDrag.current = false;
+
+    const handleMouseMove = (moveEv: MouseEvent) => {
+      const deltaX = moveEv.clientX - startX;
+      const deltaY = moveEv.clientY - startY;
+      if (!isDragging) {
+        if (Math.abs(deltaX) > 6 && Math.abs(deltaX) >= Math.abs(deltaY)) {
+          isDragging = true;
+          homeMouseDidDrag.current = true;
+          container.style.scrollBehavior = "auto";
+          container.style.scrollSnapType = "none";
+          container.style.cursor = "grabbing";
+        } else {
+          return;
+        }
+      }
+      moveEv.preventDefault();
+      container.scrollLeft = startScrollLeft - deltaX;
+    };
+
+    const handleMouseUp = (upEv: MouseEvent) => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+      container.style.scrollBehavior = "";
+      container.style.scrollSnapType = "";
+      container.style.cursor = "";
+
+      if (isDragging) {
+        const deltaX = upEv.clientX - startX;
+        let targetSlide = startSlide;
+        if (deltaX < -30) {
+          targetSlide = 1;
+        } else if (deltaX > 30) {
+          targetSlide = 0;
+        } else if (container.clientWidth > 0) {
+          targetSlide = Math.round(container.scrollLeft / container.clientWidth);
+        }
+        scrollToHomeSlide(targetSlide);
+        setTimeout(() => {
+          homeMouseDidDrag.current = false;
+        }, 60);
+      }
+    };
+
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
   };
 
   useEffect(() => {
@@ -1166,6 +1365,12 @@ useEffect(() => {
   }, [gameMode, setupView, gameState.status]);
   const [unlockModalMode, setUnlockModalMode] = useState<GameMode | null>(null);
   const [unlockPassword, setUnlockPassword] = useState("");
+
+  useEffect(() => {
+    if (!requirePointsToUnlock && unlockModalMode) {
+      setUnlockModalMode(null);
+    }
+  }, [requirePointsToUnlock, unlockModalMode]);
   const [isExitAlertOpen, setIsExitAlertOpen] = useState(false);
   const [dailyMissions, setDailyMissions] = useState<DailyMissionsState | null>(null);
   const [isDailyMissionsOpen, setIsDailyMissionsOpen] = useState(false);
@@ -1173,16 +1378,16 @@ useEffect(() => {
   const appStatusRef = useRef({
     status: gameState.status,
     setupView,
-    isAnyModalOpen: isSettingsOpen || isRulesOpen || isHistoryOpen || isLeaderboardOpen || isRegistrationOpen || isAdminStatsOpen || isPrivacyOpen || isOrbitoRulesOpen || isPenteRulesOpen || isShobuRulesOpen || isYinshRulesOpen || isOnitamaRulesOpen || isBadukRulesOpen || isStrategoRulesOpen || unlockModalMode !== null || isDailyMissionsOpen
+    isAnyModalOpen: isSettingsOpen || isAppSettingsOpen || isRulesOpen || isHistoryOpen || isLeaderboardOpen || isRegistrationOpen || isAdminStatsOpen || isPrivacyOpen || isOrbitoRulesOpen || isPenteRulesOpen || isShobuRulesOpen || isYinshRulesOpen || isOnitamaRulesOpen || isBadukRulesOpen || isStrategoRulesOpen || isQuartoRulesOpen || isPylosRulesOpen || isPylosPreviewOpen || unlockModalMode !== null || isDailyMissionsOpen
   });
 
   useEffect(() => {
     appStatusRef.current = {
       status: gameState.status,
       setupView,
-      isAnyModalOpen: isSettingsOpen || isRulesOpen || isHistoryOpen || isLeaderboardOpen || isRegistrationOpen || isAdminStatsOpen || isPrivacyOpen || isOrbitoRulesOpen || isPenteRulesOpen || isShobuRulesOpen || isYinshRulesOpen || isOnitamaRulesOpen || isBadukRulesOpen || isStrategoRulesOpen || unlockModalMode !== null || isDailyMissionsOpen
+      isAnyModalOpen: isSettingsOpen || isAppSettingsOpen || isRulesOpen || isHistoryOpen || isLeaderboardOpen || isRegistrationOpen || isAdminStatsOpen || isPrivacyOpen || isOrbitoRulesOpen || isPenteRulesOpen || isShobuRulesOpen || isYinshRulesOpen || isOnitamaRulesOpen || isBadukRulesOpen || isStrategoRulesOpen || isQuartoRulesOpen || isPylosRulesOpen || isPylosPreviewOpen || unlockModalMode !== null || isDailyMissionsOpen
     };
-  }, [gameState.status, setupView, isSettingsOpen, isRulesOpen, isHistoryOpen, isLeaderboardOpen, isRegistrationOpen, isAdminStatsOpen, isPrivacyOpen, isOrbitoRulesOpen, isPenteRulesOpen, isShobuRulesOpen, isYinshRulesOpen, isOnitamaRulesOpen, isBadukRulesOpen, isStrategoRulesOpen, unlockModalMode, isDailyMissionsOpen]);
+  }, [gameState.status, setupView, isSettingsOpen, isAppSettingsOpen, isRulesOpen, isHistoryOpen, isLeaderboardOpen, isRegistrationOpen, isAdminStatsOpen, isPrivacyOpen, isOrbitoRulesOpen, isPenteRulesOpen, isShobuRulesOpen, isYinshRulesOpen, isOnitamaRulesOpen, isBadukRulesOpen, isStrategoRulesOpen, isQuartoRulesOpen, isPylosRulesOpen, isPylosPreviewOpen, unlockModalMode, isDailyMissionsOpen]);
 
   const [isFullscreen, setIsFullscreen] = useState<boolean>(() => {
     if (typeof document !== "undefined") {
@@ -1275,8 +1480,10 @@ useEffect(() => {
       hideMobileAddressBar();
 
       // On mobile browsers where programmatic fullscreen requires a direct user touch gesture,
-      // trigger it on the very first touch/click inside the playing game
+      // trigger it only once on the very first touch/click inside the playing game
       const onUserGesture = () => {
+        window.removeEventListener("touchstart", onUserGesture);
+        window.removeEventListener("click", onUserGesture);
         enterFullScreen();
         hideMobileAddressBar();
       };
@@ -1575,20 +1782,11 @@ useEffect(() => {
       if (playerCount > 2 || (mode === "corsa" && playerCount === 3))
         setPlayerCount(2);
     }
-    if (mode === "dominio" || mode === "corsa") {
-      if (
-        boardTheme.startsWith("amazons") ||
-        boardTheme === "domineering" ||
-        boardTheme.startsWith("abalone") ||
-        boardTheme === "hex" ||
-        boardTheme === "orbito" ||
-        boardTheme === "pente" ||
-        boardTheme === "chain_triangle" ||
-        boardTheme.startsWith("shobu") ||
-        boardTheme.startsWith("onitama") ||
-        boardTheme.startsWith("baduk")
-      )
-        setBoardTheme("neon");
+    if (mode === "dominio") {
+      setBoardTheme(sanitizeDominioTheme(boardTheme));
+    }
+    if (mode === "corsa") {
+      setBoardTheme("corsa");
     }
     if (mode === "amazons" && !boardTheme.startsWith("amazons"))
       setBoardTheme("amazons-6");
@@ -1609,6 +1807,14 @@ useEffect(() => {
     if (mode === "baduk") {
       const savedT = localStorage.getItem("wallgo_theme") as BoardTheme | null;
       setBoardTheme(savedT && savedT.startsWith("baduk") ? savedT : "baduk-9");
+      setPlayerCount(2);
+    }
+    if (mode === "quarto") {
+      setBoardTheme("quarto");
+      setPlayerCount(2);
+    }
+    if (mode === "pylos") {
+      setBoardTheme("pylos");
       setPlayerCount(2);
     }
 
@@ -1890,6 +2096,7 @@ useEffect(() => {
           gameState.walls,
           gameState.players,
           gameState.boardTheme,
+          gameState.gameMode,
         )) ||
       (gameState.gameMode === "dominio" &&
         gameState.turnPhase === "walling" &&
@@ -1920,8 +2127,26 @@ useEffect(() => {
   }, [isSelectedPieceEnclosed, isWallBreakingMode]);
 
   useEffect(() => {
-    // Web listener could be here
-  }, []);
+    const isEnded = Boolean(gameState.winner || gameState.status === "ended");
+    if (isEnded) {
+      wasOrbitoEndedRef.current = true;
+      setOrbitoTiltX(0);
+      setOrbitoRotateZ(0);
+      setIsDraggingOrbito3D(false);
+      orbitoDragRef.current.active = false;
+    } else if (wasOrbitoEndedRef.current) {
+      wasOrbitoEndedRef.current = false;
+      setOrbitoTiltX(34);
+      setOrbitoRotateZ(-10);
+    }
+  }, [gameState.winner, gameState.status]);
+
+  useEffect(() => {
+    if (gameMode === "orbito" && !gameState.winner && gameState.status !== "ended") {
+      setOrbitoTiltX(34);
+      setOrbitoRotateZ(-10);
+    }
+  }, [gameMode]);
 
   useEffect(() => {
     setGameState((prev) => ({ ...prev, boardTheme }));
@@ -1934,6 +2159,14 @@ useEffect(() => {
       SoundManager.setSfxVolume(sfxVolume);
     }
   }, [isSplashActive]);
+
+  const [, setReggaeTrackTick] = useState(0);
+
+  useEffect(() => {
+    return SoundManager.subscribeTrackChange(() => {
+      setReggaeTrackTick((v) => v + 1);
+    });
+  }, []);
 
   useEffect(() => {
     SoundManager.setMusicVolume(musicVolume);
@@ -2024,16 +2257,13 @@ useEffect(() => {
             localStorage.setItem("wallgo_mimmo_fix_v1015", "true");
           }
 
-          // Score restoration for ZioSeb (Sant'Alfio) to fix the double-counted totalScoreOverall jump (4231.3 -> 3040.5)
+          // Score restoration for ZioSeb (Sant'Alfio) to prevent the double-counted totalScoreOverall jump (4225.3 -> 3044.5)
           if (
             (currentStoredName === "ZioSeb" || currentStoredName.toLowerCase() === "zioseb") &&
-            localStorage.getItem("wallgo_zioseb_fix_v22110") !== "true"
+            (parsedStats.totalScore || 0) > 2400
           ) {
-            if ((parsedStats.totalScore || 0) > 1900) {
-              parsedStats.totalScore = 1849.6788842062023;
-              statsChanged = true;
-            }
-            localStorage.setItem("wallgo_zioseb_fix_v22110", "true");
+            parsedStats.totalScore = sanitizeZioSebWallGoScore(currentStoredName, parsedStats.totalScore);
+            statsChanged = true;
           }
 
           // Score cleanup for Mimmo539 to remove illicit scores from aborted games and global glitch
@@ -2335,7 +2565,7 @@ useEffect(() => {
           try {
             const ALL_SAVED_GAME_MODES: GameMode[] = [
               "dominio", "corsa", "amazons", "domineering", "hex", "pente", "orbito",
-              "chain_triangle", "shobu", "yinsh", "abalone", "onitama", "baduk", "stratego"
+              "chain_triangle", "shobu", "yinsh", "abalone", "onitama", "baduk", "stratego", "quarto", "pylos"
             ];
             const saveKeys = [
               ...ALL_SAVED_GAME_MODES.map((m) => `wallgo_saved_game_${m}`),
@@ -2486,7 +2716,13 @@ useEffect(() => {
                   const currentLoc = savedLocation || "";
                   if (loc && currentLoc && loc !== currentLoc) return;
 
-                  if (typeof data.totalScore === "number") maxScore = Math.max(maxScore, data.totalScore);
+                  if (typeof data.totalScore === "number") {
+                    const cleanDocScore = sanitizeZioSebWallGoScore(savedName, data.totalScore);
+                    if (cleanDocScore !== data.totalScore) {
+                      updateDoc(doc(db, "devices", d.id), { totalScore: cleanDocScore }).catch(() => {});
+                    }
+                    maxScore = Math.max(maxScore, cleanDocScore);
+                  }
                   if (typeof data.totalFugaScore === "number") maxFugaScore = Math.max(maxFugaScore, data.totalFugaScore);
                   if (typeof data.totalAmazonsScore === "number") maxAmazonsScore = Math.max(maxAmazonsScore, data.totalAmazonsScore);
                   if (typeof data.totalDomineeringScore === "number") maxDomineeringScore = Math.max(maxDomineeringScore, data.totalDomineeringScore);
@@ -2571,7 +2807,7 @@ useEffect(() => {
                   [lbDoc1, lbDoc2].forEach(lbSnap => {
                     if (lbSnap && lbSnap.exists()) {
                       const lbData = lbSnap.data();
-                      if (typeof lbData.totalScore === "number") maxScore = Math.max(maxScore, lbData.totalScore);
+                      if (typeof lbData.totalScore === "number") maxScore = Math.max(maxScore, sanitizeZioSebWallGoScore(savedName, lbData.totalScore));
                       if (typeof lbData.totalFugaScore === "number") maxFugaScore = Math.max(maxFugaScore, lbData.totalFugaScore);
                       if (typeof lbData.totalAmazonsScore === "number") maxAmazonsScore = Math.max(maxAmazonsScore, lbData.totalAmazonsScore);
                       if (typeof lbData.totalDomineeringScore === "number") maxDomineeringScore = Math.max(maxDomineeringScore, lbData.totalDomineeringScore);
@@ -2668,12 +2904,7 @@ useEffect(() => {
                   if (mostRecentData["stats4.normale.losses"] !== undefined) restoredStats[4].losses = mostRecentData["stats4.normale.losses"];
                   if (mostRecentData["stats4.difficile.wins"] !== undefined) restoredStats[4].hardWins = mostRecentData["stats4.difficile.wins"];
 
-                  if (
-                    (savedName === "ZioSeb" || savedName.toLowerCase() === "zioseb") &&
-                    (restoredStats.totalScore || 0) > 1900
-                  ) {
-                    restoredStats.totalScore = 1849.6788842062023;
-                  }
+                  restoredStats.totalScore = sanitizeZioSebWallGoScore(savedName, restoredStats.totalScore);
 
                   setStats(restoredStats);
                   saveStorageItem("wallgo_stats", JSON.stringify(restoredStats));
@@ -2684,16 +2915,14 @@ useEffect(() => {
                     if (!newStats.badges) newStats.badges = [];
 
                     let changed = false;
-                    const effectiveMaxScore =
-                      (savedName === "ZioSeb" || savedName.toLowerCase() === "zioseb") && maxScore > 1900
-                        ? 1849.6788842062023
-                        : maxScore;
-                    if (effectiveMaxScore > (newStats.totalScore || 0)) { newStats.totalScore = effectiveMaxScore; changed = true; }
-                    if (
-                      (savedName === "ZioSeb" || savedName.toLowerCase() === "zioseb") &&
-                      (newStats.totalScore || 0) > 1900
-                    ) {
-                      newStats.totalScore = 1849.6788842062023;
+                    const effectiveMaxScore = sanitizeZioSebWallGoScore(savedName, maxScore);
+                    const sanitizedCurrentScore = sanitizeZioSebWallGoScore(savedName, newStats.totalScore);
+                    if (sanitizedCurrentScore !== (newStats.totalScore || 0)) {
+                      newStats.totalScore = sanitizedCurrentScore;
+                      changed = true;
+                    }
+                    if (effectiveMaxScore > (newStats.totalScore || 0)) {
+                      newStats.totalScore = effectiveMaxScore;
                       changed = true;
                     }
                     if (maxFugaScore > (newStats.totalFugaScore || 0)) { newStats.totalFugaScore = maxFugaScore; changed = true; }
@@ -2824,6 +3053,50 @@ useEffect(() => {
     }
   }, [gameState.status]);
 
+  const computeOnlineSyncCount = (gs: GameState): number => {
+    const totalPieces = (gs.players || []).reduce((acc, p) => acc + (p.positions?.length || 0), 0);
+    const totalWalls = gs.walls?.length || 0;
+    const yinshRings = gs.yinshState?.rings?.length || 0;
+    const yinshMarkers = Object.keys(gs.yinshState?.markers || {}).length;
+    const yinshRingsWon = gs.yinshState?.ringsWon
+      ? ((gs.yinshState.ringsWon[1] || 0) + (gs.yinshState.ringsWon[2] || 0))
+      : 0;
+    const yinshPhaseVal = gs.yinshState
+      ? (gs.yinshState.phase === 'remove_markers' ? 1 : gs.yinshState.phase === 'remove_ring' ? 2 : 0)
+      : 0;
+    const chainTriangleBands = gs.chainTriangleState?.rubberBands?.length || 0;
+    const quartoPiecesUsed = gs.quartoState ? (16 - gs.quartoState.availablePieces.length) : 0;
+    const quartoPhaseVal = gs.quartoState ? (gs.quartoState.phase === "place_piece" ? 1 : 0) : 0;
+    const pylosReserveUsed = gs.pylosState ? (30 - (gs.pylosState.reserve[1] + gs.pylosState.reserve[2])) : 0;
+    const pylosBoardSpheres = gs.pylosState
+      ? gs.pylosState.levels.reduce(
+          (acc, grid) => acc + grid.reduce((gAcc, row) => gAcc + row.filter((c) => c !== null).length, 0),
+          0
+        )
+      : 0;
+    const pylosPhaseVal = gs.pylosState
+      ? (gs.pylosState.phase === "recover" ? 1 + (gs.pylosState.recoverCount || 0) : 0)
+      : 0;
+    const endedVal = gs.status === "ended" ? 1 : 0;
+
+    return (
+      ((gs.turnCount || 0) * 100000) +
+      (endedVal * 50000) +
+      (yinshRings * 1000) +
+      (quartoPiecesUsed * 500) +
+      (pylosReserveUsed * 200) +
+      (yinshRingsWon * 200) +
+      (quartoPhaseVal * 100) +
+      (yinshMarkers * 50) +
+      (pylosBoardSpheres * 15) +
+      (yinshPhaseVal * 10) +
+      (chainTriangleBands * 10) +
+      (totalWalls * 10) +
+      (pylosPhaseVal * 5) +
+      totalPieces
+    );
+  };
+
   // Real-time synchronization of room moves from Firestore
   useEffect(() => {
     if (!onlineMatchSession || !db) return;
@@ -2886,6 +3159,8 @@ useEffect(() => {
                     totalOrbitoScore: newStats.totalOrbitoScore || 0,
                     totalBadukScore: newStats.totalBadukScore || 0,
                     totalStrategoScore: newStats.totalStrategoScore || 0,
+                    totalQuartoScore: newStats.totalQuartoScore || 0,
+                    totalPylosScore: newStats.totalPylosScore || 0,
                     [`${modeKey}.normale.wins`]: increment(1),
                   }).catch(() => {});
                 }
@@ -2901,7 +3176,11 @@ useEffect(() => {
       }
 
       // If move made by the other player or host initial state for guest:
-      if (data.lastMoveBy !== onlineMatchSession.myPlayerIndex && data.gameState) {
+      if (
+        data.lastMoveBy !== onlineMatchSession.myPlayerIndex &&
+        data.gameState &&
+        !(data.lastMoveBy === 0 && (data.turnCount || 0) === 0 && hasOnlineLocalMoveRef.current)
+      ) {
         try {
           const parsed: GameState = JSON.parse(data.gameState);
           const incomingSyncCount = data.turnCount ?? 0;
@@ -3059,6 +3338,8 @@ useEffect(() => {
                     totalOrbitoScore: updated.totalOrbitoScore || 0,
                     totalBadukScore: updated.totalBadukScore || 0,
                     totalStrategoScore: updated.totalStrategoScore || 0,
+                    totalQuartoScore: updated.totalQuartoScore || 0,
+                    totalPylosScore: updated.totalPylosScore || 0,
                     [`${modeKey}.${diffKey}.wins`]: increment(isWin ? 1 : 0),
                     [`${modeKey}.${diffKey}.losses`]: increment(isLoss ? 1 : 0),
                   };
@@ -3105,32 +3386,13 @@ useEffect(() => {
     if (!onlineMatchSession || !db) return;
     if (gameState.status !== "playing" && gameState.status !== "ended") return;
 
-    const totalPieces = gameState.players.reduce((acc, p) => acc + (p.positions?.length || 0), 0);
-    const totalWalls = gameState.walls?.length || 0;
-    const yinshRings = gameState.yinshState?.rings?.length || 0;
-    const yinshMarkers = Object.keys(gameState.yinshState?.markers || {}).length;
-    const yinshRingsWon = gameState.yinshState?.ringsWon
-      ? ((gameState.yinshState.ringsWon[1] || 0) + (gameState.yinshState.ringsWon[2] || 0))
-      : 0;
-    const yinshPhaseVal = gameState.yinshState
-      ? (gameState.yinshState.phase === 'remove_markers' ? 1 : gameState.yinshState.phase === 'remove_ring' ? 2 : 0)
-      : 0;
-    const chainTriangleBands = gameState.chainTriangleState?.rubberBands?.length || 0;
-
-    const syncCount =
-      (gameState.turnCount * 100000) +
-      (yinshRings * 1000) +
-      (yinshMarkers * 50) +
-      (yinshRingsWon * 200) +
-      (yinshPhaseVal * 10) +
-      (chainTriangleBands * 10) +
-      (totalWalls * 10) +
-      totalPieces;
+    const syncCount = computeOnlineSyncCount(gameState);
 
     if (syncCount > previousOnlineTurnCount.current) {
       const prevPlayerIndex = gameState.currentPlayerIndex === 0 ? 1 : 0;
       const whoMoved = gameState.lastMovedPlayerId || (gameState.winner ? (gameState.currentPlayerIndex + 1) : (prevPlayerIndex + 1));
       if (whoMoved === onlineMatchSession.myPlayerIndex || onlineMatchSession.isSimulatedOpponent) {
+        hasOnlineLocalMoveRef.current = true;
         previousOnlineTurnCount.current = syncCount;
         setDoc(doc(db, "online_rooms", onlineMatchSession.roomId), {
           gameState: JSON.stringify(gameState),
@@ -3194,6 +3456,7 @@ useEffect(() => {
       !incomingInvite &&
       !isOnlineSearchOpen &&
       !isSettingsOpen &&
+      !isAppSettingsOpen &&
       !isRulesOpen &&
       !isHistoryOpen &&
       !isLeaderboardOpen &&
@@ -3207,6 +3470,9 @@ useEffect(() => {
       !isOnitamaRulesOpen &&
       !isBadukRulesOpen &&
       !isStrategoRulesOpen &&
+      !isQuartoRulesOpen &&
+      !isPylosRulesOpen &&
+      !isPylosPreviewOpen &&
       unlockModalMode === null &&
       !isDailyMissionsOpen &&
       !isExitAlertOpen &&
@@ -3248,6 +3514,8 @@ useEffect(() => {
         "yinsh",
         "abalone",
         "onitama",
+        "quarto",
+        "pylos",
       ];
       const randomMode = ELIGIBLE_MODES[Math.floor(Math.random() * ELIGIBLE_MODES.length)];
 
@@ -3274,6 +3542,10 @@ useEffect(() => {
         theme = "chain_triangle";
       } else if (randomMode === "domineering") {
         theme = "domineering";
+      } else if (randomMode === "quarto") {
+        theme = "quarto";
+      } else if (randomMode === "pylos") {
+        theme = "pylos";
       }
 
       const fakeInviteId = `ai_simulated_invite_${Date.now()}`;
@@ -3305,6 +3577,7 @@ useEffect(() => {
     incomingInvite,
     isOnlineSearchOpen,
     isSettingsOpen,
+    isAppSettingsOpen,
     isRulesOpen,
     isHistoryOpen,
     isLeaderboardOpen,
@@ -3318,6 +3591,9 @@ useEffect(() => {
     isOnitamaRulesOpen,
     isBadukRulesOpen,
     isStrategoRulesOpen,
+    isQuartoRulesOpen,
+    isPylosRulesOpen,
+    isPylosPreviewOpen,
     unlockModalMode,
     isDailyMissionsOpen,
     isExitAlertOpen,
@@ -3426,36 +3702,42 @@ useEffect(() => {
     }
 
     const effectiveTheme: BoardTheme =
-      matchData.boardTheme ||
-      (matchData.gameMode === "corsa"
-        ? "corsa"
-        : matchData.gameMode === "amazons"
-          ? "amazons-6"
-          : matchData.gameMode === "domineering"
-            ? "domineering"
-            : matchData.gameMode === "abalone"
-              ? (isRandomAbaloneTheme
-                  ? ALL_ABALONE_THEMES[Math.floor(Math.random() * ALL_ABALONE_THEMES.length)]
-                  : (boardTheme && boardTheme.startsWith("abalone") ? boardTheme : "abalone"))
-              : matchData.gameMode === "hex"
-                ? "hex"
-                : matchData.gameMode === "orbito"
-                  ? "orbito"
-                  : matchData.gameMode === "pente"
-                    ? "pente"
-                    : matchData.gameMode === "chain_triangle"
-                      ? "chain_triangle"
-                      : matchData.gameMode === "shobu"
-                        ? "shobu"
-                        : matchData.gameMode === "yinsh"
-                          ? "yinsh"
-                          : matchData.gameMode === "onitama"
-                            ? "onitama-dark"
-                            : matchData.gameMode === "baduk"
-                              ? "baduk-9"
-                              : matchData.gameMode === "stratego"
-                                ? "stratego-classic"
-                                : "neon");
+      matchData.gameMode === "dominio"
+        ? sanitizeDominioTheme(matchData.boardTheme)
+        : matchData.boardTheme ||
+          (matchData.gameMode === "corsa"
+            ? "corsa"
+            : matchData.gameMode === "amazons"
+              ? "amazons-6"
+              : matchData.gameMode === "domineering"
+                ? "domineering"
+                : matchData.gameMode === "abalone"
+                  ? (isRandomAbaloneTheme
+                      ? ALL_ABALONE_THEMES[Math.floor(Math.random() * ALL_ABALONE_THEMES.length)]
+                      : (boardTheme && boardTheme.startsWith("abalone") ? boardTheme : "abalone"))
+                  : matchData.gameMode === "hex"
+                    ? "hex"
+                    : matchData.gameMode === "orbito"
+                      ? "orbito"
+                      : matchData.gameMode === "pente"
+                        ? "pente"
+                        : matchData.gameMode === "chain_triangle"
+                          ? "chain_triangle"
+                          : matchData.gameMode === "shobu"
+                            ? "shobu"
+                            : matchData.gameMode === "yinsh"
+                              ? "yinsh"
+                              : matchData.gameMode === "onitama"
+                                ? "onitama-dark"
+                                : matchData.gameMode === "baduk"
+                                  ? "baduk-9"
+                                  : matchData.gameMode === "stratego"
+                                    ? "stratego-classic"
+                                    : matchData.gameMode === "quarto"
+                                      ? "quarto"
+                                      : matchData.gameMode === "pylos"
+                                        ? "pylos"
+                                        : "neon");
 
     setGameMode(matchData.gameMode);
     setBoardTheme(effectiveTheme);
@@ -3469,6 +3751,7 @@ useEffect(() => {
     setHasShownPostOnlineInviteModal(false);
     setPostOnlineInviteSession(null);
     previousOnlineTurnCount.current = -1;
+    hasOnlineLocalMoveRef.current = false;
     setIsAIThinking(false);
     aiRunningRef.current = false;
 
@@ -3518,10 +3801,10 @@ useEffect(() => {
         })),
         color: PLAYER_COLORS[1],
         isAI: isHostAI,
-        score: matchData.gameMode === "baduk" ? 0 : 0,
+        score: matchData.gameMode === "baduk" ? 7.5 : 0,
         isEnclosed: false,
         isTrapped: false,
-        hasWallbreaker: !isCorsa && !isAmazons && matchData.gameMode !== "abalone" && matchData.gameMode !== "orbito" && matchData.gameMode !== "shobu" && matchData.gameMode !== "hex",
+        hasWallbreaker: !isCorsa && !isAmazons && matchData.gameMode !== "abalone" && matchData.gameMode !== "orbito" && matchData.gameMode !== "shobu" && matchData.gameMode !== "hex" && matchData.gameMode !== "quarto" && matchData.gameMode !== "pylos",
         wallsLeft: isCorsa ? 10 : 0,
       },
       {
@@ -3533,23 +3816,23 @@ useEffect(() => {
         })),
         color: PLAYER_COLORS[2],
         isAI: isGuestAI,
-        score: matchData.gameMode === "baduk" ? 7.5 : 0,
+        score: 0,
         isEnclosed: false,
         isTrapped: false,
-        hasWallbreaker: !isCorsa && !isAmazons && matchData.gameMode !== "abalone" && matchData.gameMode !== "orbito" && matchData.gameMode !== "shobu" && matchData.gameMode !== "hex",
+        hasWallbreaker: !isCorsa && !isAmazons && matchData.gameMode !== "abalone" && matchData.gameMode !== "orbito" && matchData.gameMode !== "shobu" && matchData.gameMode !== "hex" && matchData.gameMode !== "quarto" && matchData.gameMode !== "pylos",
         wallsLeft: isCorsa ? 10 : 0,
       }
     ];
 
-    const initialTurnPhase = isCorsa || (isAmazons && startingPositions[1] && startingPositions[1].length > 0) || matchData.gameMode === "abalone" || matchData.gameMode === "orbito" || matchData.gameMode === "shobu" || matchData.gameMode === "chain_triangle" || matchData.gameMode === "yinsh" || matchData.gameMode === "onitama"
+    const initialTurnPhase = isCorsa || (isAmazons && startingPositions[1] && startingPositions[1].length > 0) || matchData.gameMode === "abalone" || matchData.gameMode === "orbito" || matchData.gameMode === "shobu" || matchData.gameMode === "chain_triangle" || matchData.gameMode === "yinsh" || matchData.gameMode === "onitama" || matchData.gameMode === "quarto" || matchData.gameMode === "pylos"
       ? "moving"
       : "setup";
 
     const newGameState: GameState = {
       players: onlinePlayers,
       walls: [],
-      currentPlayerIndex: 0,
-      startingPlayerIndex: 0,
+      currentPlayerIndex: 1,
+      startingPlayerIndex: 1,
       turnPhase: initialTurnPhase,
       setupStep: 0,
       selectedPieceIndex: isCorsa ? 0 : null,
@@ -3571,39 +3854,68 @@ useEffect(() => {
         selectedPeg: null,
       } : undefined,
       yinshState: matchData.gameMode === "yinsh" ? createInitialYinshState() : undefined,
-      onitamaState: matchData.gameMode === "onitama" ? createInitialOnitamaState(1) : undefined,
+      onitamaState: matchData.gameMode === "onitama" ? createInitialOnitamaState(2) : undefined,
+      quartoState: matchData.gameMode === "quarto" ? createInitialQuartoState() : undefined,
+      pylosState: matchData.gameMode === "pylos" ? createInitialPylosState(pylosLineVariant) : undefined,
       orbitoPhase: matchData.gameMode === "orbito" ? "place" : undefined,
       lastPlacedPiece: null,
       lastMoveByPlayer: {},
       turnCount: 0,
     };
 
+    previousOnlineTurnCount.current = computeOnlineSyncCount(newGameState);
     setGameState(newGameState);
     setPenteDyingPieces([]);
     enterFullScreen();
     hideMobileAddressBar();
 
     if ((matchData.myPlayerIndex === 1 || isSimulatedAI) && db) {
-      setDoc(doc(db, "online_rooms", matchData.roomId), {
-        roomId: matchData.roomId,
-        gameMode: matchData.gameMode,
-        boardTheme: effectiveTheme,
-        gameState: JSON.stringify(newGameState),
-        lastMoveBy: 0,
-        turnCount: 0,
-        hostName,
-        guestName,
-        isGuestAI: isSimulatedAI && matchData.myPlayerIndex === 1,
-        isHostAI: isSimulatedAI && matchData.myPlayerIndex === 2,
-        isSimulatedOpponent: isSimulatedAI,
-        opponentDeviceId: matchData.opponentDeviceId || null,
-        status: "playing",
-        ...(matchData.gameMode === "stratego" ? {
-          strategoMove: null,
-        } : {}),
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      }, { merge: true }).catch(err => console.error("Error setting initial room state:", err));
+      const roomRef = doc(db, "online_rooms", matchData.roomId);
+      const writeInitialRoom = async () => {
+        try {
+          if (!isSimulatedAI && matchData.myPlayerIndex === 1) {
+            const snap = await getDoc(roomRef);
+            const existing = snap.exists() ? snap.data() : null;
+            if (existing && (existing.gameState || (existing.turnCount || 0) > 0)) {
+              if (existing.gameState) {
+                const parsedExisting: GameState = JSON.parse(existing.gameState);
+                previousOnlineTurnCount.current = existing.turnCount ?? computeOnlineSyncCount(parsedExisting);
+                setGameState(parsedExisting);
+              }
+              await setDoc(roomRef, {
+                hostName,
+                guestName,
+                status: existing.status || "playing",
+                updatedAt: new Date().toISOString()
+              }, { merge: true });
+              return;
+            }
+          }
+          await setDoc(roomRef, {
+            roomId: matchData.roomId,
+            gameMode: matchData.gameMode,
+            boardTheme: effectiveTheme,
+            gameState: JSON.stringify(newGameState),
+            lastMoveBy: 0,
+            turnCount: 0,
+            hostName,
+            guestName,
+            isGuestAI: isSimulatedAI && matchData.myPlayerIndex === 1,
+            isHostAI: isSimulatedAI && matchData.myPlayerIndex === 2,
+            isSimulatedOpponent: isSimulatedAI,
+            opponentDeviceId: matchData.opponentDeviceId || null,
+            status: "playing",
+            ...(matchData.gameMode === "stratego" ? {
+              strategoMove: null,
+            } : {}),
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          }, { merge: true });
+        } catch (err) {
+          console.error("Error setting initial room state:", err);
+        }
+      };
+      writeInitialRoom();
     }
 
     // Se la partita è a Baduk/Go in multiplayer, controlla se esiste un salvataggio precedente tra questi 2 giocatori
@@ -3654,6 +3966,7 @@ useEffect(() => {
 
       // Sincronizza lo stato ripreso con la stanza online
       const newTurnCount = (parsedGameState.turnCount || 0) + 1;
+      hasOnlineLocalMoveRef.current = false;
       previousOnlineTurnCount.current = newTurnCount;
       await setDoc(
         doc(db, "online_rooms", onlineMatchSession.roomId),
@@ -3965,6 +4278,8 @@ useEffect(() => {
       } catch (e) {}
       setOnlineMatchSession(null);
     }
+    hasOnlineLocalMoveRef.current = false;
+    previousOnlineTurnCount.current = -1;
     SoundManager.stopVictory();
     aiRunningRef.current = false;
     setIsAIThinking(false);
@@ -4045,7 +4360,9 @@ useEffect(() => {
         playerCount,
         startingPreference,
         isRandomAbaloneTheme,
-        badukStoneColor
+        badukStoneColor,
+        quartoBoardStyle,
+        pylosBoardStyle
       };
       const jsonStr = JSON.stringify(stateToSave);
       await saveStorageItem(`wallgo_saved_game_${gameMode}`, jsonStr);
@@ -4088,6 +4405,27 @@ useEffect(() => {
           setPendingSavedGameInfo(null);
           return;
         }
+        if ((saved.gameMode || modeToLoad) === "dominio") {
+          const cleanTheme = sanitizeDominioTheme(saved.boardTheme || saved.gameState?.boardTheme);
+          const hasOutOfBoundsPiece = saved.gameState?.players?.some((pl: Player) =>
+            pl.positions?.some((pos: Point) => !isValidCell(pos.r, pos.c, cleanTheme))
+          );
+          if (hasOutOfBoundsPiece) {
+            await removeStorageItem(`wallgo_saved_game_${modeToLoad}`);
+            await removeStorageItem("wallgo_last_saved_mode");
+            if (typeof window !== "undefined") {
+              localStorage.removeItem(`wallgo_saved_game_${modeToLoad}`);
+              localStorage.removeItem("wallgo_last_saved_mode");
+            }
+            setSavedGamesVersion((v) => v + 1);
+            setPendingSavedGameInfo(null);
+            return;
+          }
+          saved.boardTheme = cleanTheme;
+          if (saved.gameState) {
+            saved.gameState.boardTheme = cleanTheme;
+          }
+        }
         if (saved.gameMode) setGameMode(saved.gameMode);
         if (saved.boardTheme) setBoardTheme(saved.boardTheme);
         if (saved.difficulty) setDifficulty(saved.difficulty);
@@ -4095,6 +4433,8 @@ useEffect(() => {
         if (saved.startingPreference) setStartingPreference(saved.startingPreference);
         if (saved.isRandomAbaloneTheme !== undefined) setIsRandomAbaloneTheme(saved.isRandomAbaloneTheme);
         if (saved.badukStoneColor) setBadukStoneColor(saved.badukStoneColor);
+        if (saved.quartoBoardStyle) setQuartoBoardStyle(saved.quartoBoardStyle);
+        if (saved.pylosBoardStyle) setPylosBoardStyle(saved.pylosBoardStyle);
         setGameState(saved.gameState);
         enterFullScreen();
         hideMobileAddressBar();
@@ -4196,7 +4536,9 @@ useEffect(() => {
       updatedOnitamaState?: any,
       updatedBadukKoPoint?: Point | null,
       isBadukFinalized: boolean = false,
-      updatedLastPlacedPiece?: { r: number; c: number; playerId: PlayerId } | null
+      updatedLastPlacedPiece?: { r: number; c: number; playerId: PlayerId } | null,
+      updatedQuartoState?: any,
+      updatedPylosState?: PylosState
     ) => {
       setAdviceObj(null);
       setIsAdviceLoading(false);
@@ -4230,10 +4572,13 @@ useEffect(() => {
       }
 
       // Pass entire boardTheme to logic
-      const activeTheme = gameState.boardTheme;
+      const activeTheme =
+        gameState.gameMode === "dominio"
+          ? sanitizeDominioTheme(gameState.boardTheme)
+          : gameState.boardTheme;
       
       const oldTerritory = gameState.gameMode === "baduk" 
-        ? calculateTerritory(gameState.walls, gameState.players, activeTheme, gameState.badukDeadStones) 
+        ? calculateTerritory(gameState.walls, gameState.players, activeTheme, gameState.badukDeadStones, gameState.gameMode) 
         : null;
         
       const territory = calculateTerritory(
@@ -4241,6 +4586,7 @@ useEffect(() => {
         updatedPlayers,
         activeTheme,
         gameState.badukDeadStones,
+        gameState.gameMode,
       );
 
       let territoryCreated = false;
@@ -4252,7 +4598,7 @@ useEffect(() => {
           ? p.positions.filter(pos => !gameState.badukDeadStones!.includes(`${pos.r},${pos.c}`)).length
           : p.positions.length;
         const newScore =
-          gameState.gameMode === "abalone" || gameState.gameMode === "chain_triangle" || gameState.gameMode === "shobu" || gameState.gameMode === "yinsh" || gameState.gameMode === "corsa"
+          gameState.gameMode === "abalone" || gameState.gameMode === "chain_triangle" || gameState.gameMode === "shobu" || gameState.gameMode === "yinsh" || gameState.gameMode === "corsa" || gameState.gameMode === "quarto" || gameState.gameMode === "pylos"
             ? p.score || 0
             : gameState.gameMode === "baduk"
               ? (territory.scores[p.id] || 0) + aliveStones + (p.id !== gameState.players[gameState.startingPlayerIndex || 0]?.id ? 7.5 : 0)
@@ -4271,15 +4617,17 @@ useEffect(() => {
           newScore > (oldPlayer.score || 0) &&
           gameState.gameMode !== "abalone" &&
           gameState.gameMode !== "baduk" &&
-          gameState.gameMode !== "corsa"
+          gameState.gameMode !== "corsa" &&
+          gameState.gameMode !== "quarto" &&
+          gameState.gameMode !== "pylos"
         ) {
           territoryCreated = true;
         }
         return {
           ...p,
           score: newScore,
-          isEnclosed: gameState.gameMode === "corsa" ? false : territory.enclosed[p.id],
-          isTrapped: gameState.gameMode === "corsa" ? false : !canPlayerMove(
+          isEnclosed: gameState.gameMode === "corsa" || gameState.gameMode === "quarto" || gameState.gameMode === "pylos" ? false : territory.enclosed[p.id],
+          isTrapped: gameState.gameMode === "corsa" || gameState.gameMode === "quarto" || gameState.gameMode === "pylos" ? false : !canPlayerMove(
             p,
             updatedWalls,
             updatedPlayers,
@@ -4357,7 +4705,7 @@ useEffect(() => {
       }
 
       let dominioWinnerId: PlayerId | "draw" | null = null;
-      if (!isAmazons && !isCorsa && gameState.gameMode !== "domineering" && gameState.gameMode !== "abalone" && gameState.gameMode !== "hex" && gameState.gameMode !== "pente" && gameState.gameMode !== "orbito" && gameState.gameMode !== "shobu" && gameState.gameMode !== "yinsh" && gameState.gameMode !== "onitama" && gameState.gameMode !== "baduk" && gameState.gameMode !== "chain_triangle") {
+      if (!isAmazons && !isCorsa && gameState.gameMode !== "domineering" && gameState.gameMode !== "abalone" && gameState.gameMode !== "hex" && gameState.gameMode !== "pente" && gameState.gameMode !== "orbito" && gameState.gameMode !== "shobu" && gameState.gameMode !== "yinsh" && gameState.gameMode !== "onitama" && gameState.gameMode !== "baduk" && gameState.gameMode !== "chain_triangle" && gameState.gameMode !== "quarto" && gameState.gameMode !== "pylos") {
         const activePlayers = playersWithStats.filter((p) => !p.isTrapped);
         if (activePlayers.length === 1 && playersWithStats.length === 2) {
           dominioWinnerId = activePlayers[0].id;
@@ -4376,8 +4724,13 @@ useEffect(() => {
 
       const allTrappedPermanently = playersWithStats.every(
         (p) =>
-          !canPhysicallyMove(p, updatedWalls, playersWithStats, activeTheme) &&
-          !p.hasWallbreaker,
+          !canPhysicallyMove(
+            p,
+            updatedWalls,
+            playersWithStats,
+            activeTheme,
+            gameState.gameMode,
+          ) && !p.hasWallbreaker,
       );
       const allEnclosed = playersWithStats.every((p) => p.isEnclosed);
       const everyonePassed = nextPassCount >= playersWithStats.length;
@@ -4417,7 +4770,11 @@ useEffect(() => {
       // Nuova condizione: tutti i territori conquistati (nessuna cella neutrale o contesa)
       // isSettled è true se non ci sono regioni con più di un giocatore
       const isGameOver =
-        gameState.gameMode === "yinsh"
+        gameState.gameMode === "pylos"
+          ? (updatedPylosState || gameState.pylosState)?.winner !== undefined && (updatedPylosState || gameState.pylosState)?.winner !== null
+          : gameState.gameMode === "quarto"
+          ? (updatedQuartoState || gameState.quartoState)?.winner !== undefined && (updatedQuartoState || gameState.quartoState)?.winner !== null
+          : gameState.gameMode === "yinsh"
           ? (updatedYinshState || gameState.yinshState)?.winner !== undefined && (updatedYinshState || gameState.yinshState)?.winner !== null
           : gameState.gameMode === "onitama"
             ? (updatedOnitamaState || gameState.onitamaState)?.winner !== undefined && (updatedOnitamaState || gameState.onitamaState)?.winner !== null
@@ -4456,7 +4813,11 @@ useEffect(() => {
         );
         const isDraw = winners.length > 1;
         const winnerId: PlayerId | "draw" =
-          gameState.gameMode === "yinsh"
+          gameState.gameMode === "pylos"
+            ? (updatedPylosState || gameState.pylosState)?.winner!
+            : gameState.gameMode === "quarto"
+            ? (updatedQuartoState || gameState.quartoState)?.winner!
+            : gameState.gameMode === "yinsh"
             ? (updatedYinshState || gameState.yinshState)?.winner!
             : gameState.gameMode === "onitama"
               ? (updatedOnitamaState || gameState.onitamaState)?.winner!
@@ -4477,18 +4838,18 @@ useEffect(() => {
                     ? "draw"
                     : winners[0].id
                 : gameState.gameMode === "domineering"
-                  ? domineeringWinnerId!
-                  : isCorsa
-                    ? (corsaWinnerId as unknown as PlayerId)
-                    : isAmazons
-                      ? (amazonsWinnerId as unknown as PlayerId)
-                      : gameState.gameMode === "hex"
-                        ? territory.hexWinner!
-                        : dominioWinnerId !== null
-                          ? dominioWinnerId
-                          : isDraw
-                            ? (playersWithStats.filter(p => !p.isTrapped).length === 1 ? playersWithStats.find(p => !p.isTrapped)!.id : "draw")
-                            : winners[0].id;
+                   ? domineeringWinnerId!
+                   : isCorsa
+                     ? (corsaWinnerId as unknown as PlayerId)
+                     : isAmazons
+                       ? (amazonsWinnerId as unknown as PlayerId)
+                       : gameState.gameMode === "hex"
+                         ? territory.hexWinner!
+                         : dominioWinnerId !== null
+                           ? dominioWinnerId
+                           : isDraw
+                             ? (playersWithStats.filter(p => !p.isTrapped).length === 1 ? playersWithStats.find(p => !p.isTrapped)!.id : "draw")
+                             : winners[0].id;
 
         const isWin = onlineMatchSession ? winnerId === onlineMatchSession.myPlayerIndex : winnerId === 1;
         const isLoss = onlineMatchSession ? (winnerId !== "draw" && winnerId !== onlineMatchSession.myPlayerIndex) : (winnerId !== "draw" && winnerId !== 1);
@@ -4528,9 +4889,17 @@ useEffect(() => {
           newStats.totalOrbitoScore = 0;
         if (newStats.totalBadukScore === undefined)
           newStats.totalBadukScore = 0;
+        if (newStats.totalQuartoScore === undefined)
+          newStats.totalQuartoScore = 0;
+        if (newStats.totalPylosScore === undefined)
+          newStats.totalPylosScore = 0;
 
         const oldScore =
-          gameState.gameMode === "yinsh"
+          gameState.gameMode === "pylos"
+            ? newStats.totalPylosScore
+            : gameState.gameMode === "quarto"
+            ? newStats.totalQuartoScore
+            : gameState.gameMode === "yinsh"
             ? newStats.totalYinshScore
             : gameState.gameMode === "pente"
             ? newStats.totalPenteScore
@@ -4579,6 +4948,7 @@ useEffect(() => {
           if (difficulty === "facile") {
             if (gameState.gameMode === "abalone") scoreChange = 1.5;
             else if (gameState.gameMode === "yinsh") scoreChange = 2;
+            else if (gameState.gameMode === "quarto" || gameState.gameMode === "pylos") scoreChange = 1.5;
             else if (gameState.gameMode === "shobu") scoreChange = 1.5;
             else if (gameState.gameMode === "chain_triangle") scoreChange = 1.5;
             else if (gameState.gameMode === "pente") scoreChange = 1.5;
@@ -4594,6 +4964,7 @@ useEffect(() => {
           } else if (difficulty === "normale") {
             if (gameState.gameMode === "abalone") scoreChange = 3;
             else if (gameState.gameMode === "yinsh") scoreChange = 3.5;
+            else if (gameState.gameMode === "quarto" || gameState.gameMode === "pylos") scoreChange = 3;
             else if (gameState.gameMode === "shobu") scoreChange = 3;
             else if (gameState.gameMode === "chain_triangle") scoreChange = 3;
             else if (gameState.gameMode === "pente") scoreChange = 2.7;
@@ -4616,6 +4987,7 @@ useEffect(() => {
           } else if (difficulty === "difficile") {
             if (gameState.gameMode === "abalone") scoreChange = 5;
             else if (gameState.gameMode === "yinsh") scoreChange = 6.5;
+            else if (gameState.gameMode === "quarto" || gameState.gameMode === "pylos") scoreChange = 5;
             else if (gameState.gameMode === "shobu") scoreChange = 5.5;
             else if (gameState.gameMode === "chain_triangle") scoreChange = 6;
             else if (gameState.gameMode === "pente") scoreChange = 4.8;
@@ -4637,6 +5009,7 @@ useEffect(() => {
           } else if (difficulty === "estrema") {
             if (gameState.gameMode === "abalone") scoreChange = 12;
             else if (gameState.gameMode === "yinsh") scoreChange = 14;
+            else if (gameState.gameMode === "quarto" || gameState.gameMode === "pylos") scoreChange = 12;
             else if (gameState.gameMode === "shobu") scoreChange = 13;
             else if (gameState.gameMode === "chain_triangle") scoreChange = 15;
             else if (gameState.gameMode === "pente") scoreChange = 7;
@@ -4659,6 +5032,7 @@ useEffect(() => {
             // Give even higher rewards for maestro
             if (gameState.gameMode === "abalone") scoreChange = 20;
             else if (gameState.gameMode === "yinsh") scoreChange = 25;
+            else if (gameState.gameMode === "quarto" || gameState.gameMode === "pylos") scoreChange = 20;
             else if (gameState.gameMode === "shobu") scoreChange = 22;
             else if (gameState.gameMode === "chain_triangle") scoreChange = 25;
             else if (gameState.gameMode === "pente") scoreChange = 12;
@@ -4760,6 +5134,14 @@ useEffect(() => {
           if (!newStats.totalBadukScore) newStats.totalBadukScore = 0;
           newStats.totalBadukScore += scoreChange;
           if (newStats.totalBadukScore < 0) newStats.totalBadukScore = 0;
+        } else if (gameState.gameMode === "quarto") {
+          if (!newStats.totalQuartoScore) newStats.totalQuartoScore = 0;
+          newStats.totalQuartoScore += scoreChange;
+          if (newStats.totalQuartoScore < 0) newStats.totalQuartoScore = 0;
+        } else if (gameState.gameMode === "pylos") {
+          if (!newStats.totalPylosScore) newStats.totalPylosScore = 0;
+          newStats.totalPylosScore += scoreChange;
+          if (newStats.totalPylosScore < 0) newStats.totalPylosScore = 0;
         } else if (gameState.gameMode === "domineering") {
           if (!newStats.totalDomineeringScore) newStats.totalDomineeringScore = 0;
           newStats.totalDomineeringScore += scoreChange;
@@ -4913,6 +5295,12 @@ useEffect(() => {
               if (gameState.gameMode === "chain_triangle") {
                 addBadge("chain_triangle_medium");
               }
+              if (gameState.gameMode === "quarto") {
+                addBadge("quarto_hard");
+              }
+              if (gameState.gameMode === "pylos") {
+                addBadge("pylos_hard");
+              }
 
               if (
                 (newStats[2].hardWins || 0) > 0 &&
@@ -4930,6 +5318,12 @@ useEffect(() => {
               }
               if (gameState.gameMode === "onitama") {
                 addBadge("onitama_hard");
+              }
+              if (gameState.gameMode === "quarto") {
+                addBadge("quarto_hard");
+              }
+              if (gameState.gameMode === "pylos") {
+                addBadge("pylos_hard");
               }
               if (gameState.gameMode === "baduk") {
                 addBadge("baduk_extreme");
@@ -4953,6 +5347,8 @@ useEffect(() => {
           if (mode === "onitama") return "onitamaStats";
           if (mode === "shobu") return "shobuStats";
           if (mode === "yinsh") return "yinshStats";
+          if (mode === "quarto") return "quartoStats";
+          if (mode === "pylos") return "pylosStats";
           if (mode === "chain_triangle") return "chainTriangleStats";
           if (mode === "pente") return "penteStats";
           if (mode === "orbito") return "orbitoStats";
@@ -4988,6 +5384,10 @@ useEffect(() => {
         const newScore =
           gameState.gameMode === "yinsh"
             ? newStats.totalYinshScore
+            : gameState.gameMode === "pylos"
+            ? newStats.totalPylosScore
+            : gameState.gameMode === "quarto"
+            ? newStats.totalQuartoScore
             : gameState.gameMode === "pente"
             ? newStats.totalPenteScore
             : gameState.gameMode === "shobu"
@@ -5104,6 +5504,8 @@ useEffect(() => {
           consecutivePasses: nextPassCount,
           matchResult: { pointsEarned: finalPointsEarned, earnedBadges },
           ...(updatedYinshState && { yinshState: updatedYinshState }),
+          ...(updatedQuartoState && { quartoState: updatedQuartoState }),
+          ...(updatedPylosState && { pylosState: updatedPylosState }),
           ...(updatedLastPlacedPiece !== undefined
             ? {
                 lastPlacedPiece: updatedLastPlacedPiece,
@@ -5142,15 +5544,20 @@ useEffect(() => {
                 const deviceData = deviceSnap.exists() ? deviceSnap.data() : {};
 
                 // Protezione contro sovrascrittura accidentale di un punteggio cloud più alto (es. dopo ripristino da bug migrazione)
+                const sanitizedDeviceCloudScore =
+                  typeof deviceData.totalScore === "number"
+                    ? sanitizeZioSebWallGoScore(userName, deviceData.totalScore)
+                    : 0;
+                newStats.totalScore = sanitizeZioSebWallGoScore(userName, newStats.totalScore);
                 if (
                   typeof deviceData.totalScore === "number" &&
-                  deviceData.totalScore > (newStats.totalScore || 0) + 10
+                  sanitizedDeviceCloudScore > (newStats.totalScore || 0) + 10
                 ) {
                   const isWallGoGame =
                     !gameState.gameMode || gameState.gameMode === "dominio";
                   newStats.totalScore = Math.max(
                     0,
-                    deviceData.totalScore + (isWallGoGame ? scoreChange : 0)
+                    sanitizedDeviceCloudScore + (isWallGoGame ? scoreChange : 0)
                   );
                   saveStorageItem("wallgo_stats", JSON.stringify(newStats));
                   setStats({ ...newStats });
@@ -5193,6 +5600,8 @@ useEffect(() => {
                   totalOnitamaScore: newStats.totalOnitamaScore || 0,
                   totalOrbitoScore: newStats.totalOrbitoScore || 0,
                   totalStrategoScore: newStats.totalStrategoScore || 0,
+                  totalQuartoScore: newStats.totalQuartoScore || 0,
+                  totalPylosScore: newStats.totalPylosScore || 0,
                   unlockedModes: newStats.unlockedModes || [],
                   userName: userName,
                   userLocation: userLocation,
@@ -5205,6 +5614,8 @@ useEffect(() => {
                 if (newStats.yinshStats) updates.yinshStats = newStats.yinshStats;
                 if (newStats.onitamaStats) updates.onitamaStats = newStats.onitamaStats;
                 if (newStats.badukStats) updates.badukStats = newStats.badukStats;
+                if (newStats.quartoStats) updates.quartoStats = newStats.quartoStats;
+                if (newStats.pylosStats) updates.pylosStats = newStats.pylosStats;
                 if (newStats.totalBadukScore !== undefined) updates.totalBadukScore = newStats.totalBadukScore;
 
                 if (!deviceData.firstGamePlayedAt) {
@@ -5325,6 +5736,8 @@ useEffect(() => {
                 let aggregatedOrbitoScore = 0;
                 let aggregatedBadukScore = 0;
                 let aggregatedStrategoScore = 0;
+                let aggregatedQuartoScore = 0;
+                let aggregatedPylosScore = 0;
                 
                 let aggregatedBaseGames = 0;
                 let aggregatedFugaGames = 0;
@@ -5340,6 +5753,8 @@ useEffect(() => {
                 let aggregatedOrbitoGames = 0;
                 let aggregatedBadukGames = 0;
                 let aggregatedStrategoGames = 0;
+                let aggregatedQuartoGames = 0;
+                let aggregatedPylosGames = 0;
 
                 const getPointsForDiff = (
                   id: string,
@@ -5419,11 +5834,15 @@ useEffect(() => {
                     ? new Date(lastActiveStr).getTime()
                     : 0;
 
-                  // Usa il punteggio aggiornato se è il dispositivo corrente, altrimenti quello del DB
-                  const docScore =
+                  // Usa il punteggio aggiornato se è il dispositivo corrente, altrimenti quello del DB (sanificando eventuali vecchi score duplicati)
+                  const rawDocScore =
                     d.id === deviceId
                       ? newStats.totalScore || 0
                       : data.totalScore || 0;
+                  const docScore = sanitizeZioSebWallGoScore(userName, rawDocScore);
+                  if (d.id !== deviceId && typeof data.totalScore === "number" && docScore !== data.totalScore) {
+                    updateDoc(doc(db, "devices", d.id), { totalScore: docScore }).catch(() => {});
+                  }
                   const docFugaScore =
                     d.id === deviceId
                       ? newStats.totalFugaScore || 0
@@ -5476,6 +5895,14 @@ useEffect(() => {
                     d.id === deviceId
                       ? newStats.totalStrategoScore || 0
                       : data.totalStrategoScore || 0;
+                  const docQuartoScore =
+                    d.id === deviceId
+                      ? newStats.totalQuartoScore || 0
+                      : data.totalQuartoScore || 0;
+                  const docPylosScore =
+                    d.id === deviceId
+                      ? newStats.totalPylosScore || 0
+                      : data.totalPylosScore || 0;
 
                   const countGames = (statsObj: any, prefix?: string, fullData?: any) => {
                     let sum = 0;
@@ -5519,6 +5946,8 @@ useEffect(() => {
                   aggregatedOrbitoGames = Math.max(aggregatedOrbitoGames, getFlatCounts('orbitoStats'));
                   aggregatedBadukGames = Math.max(aggregatedBadukGames, getFlatCounts('badukStats'));
                   aggregatedStrategoGames = Math.max(aggregatedStrategoGames, getFlatCounts('strategoStats'));
+                  aggregatedQuartoGames = Math.max(aggregatedQuartoGames, getFlatCounts('quartoStats'));
+                  aggregatedPylosGames = Math.max(aggregatedPylosGames, getFlatCounts('pylosStats'));
 
 
                   // docScore already includes badge points earned on this device; take the max across devices to avoid re-adding badge points when a device doc had missing badges
@@ -5536,6 +5965,8 @@ useEffect(() => {
                   aggregatedOrbitoScore = Math.max(aggregatedOrbitoScore, docOrbitoScore);
                   aggregatedBadukScore = Math.max(aggregatedBadukScore, docBadukScore);
                   aggregatedStrategoScore = Math.max(aggregatedStrategoScore, docStrategoScore);
+                  aggregatedQuartoScore = Math.max(aggregatedQuartoScore, docQuartoScore);
+                  aggregatedPylosScore = Math.max(aggregatedPylosScore, docPylosScore);
 
                   // Se non è il più recente e ha più di 7 giorni, eliminalo
                   if (
@@ -5656,6 +6087,16 @@ useEffect(() => {
                   modesUpdate.totalStrategoScore = aggregatedStrategoScore;
                   shouldUpdateDeviceModes = true;
                 }
+                if (aggregatedQuartoScore > (newStats.totalQuartoScore || 0)) {
+                  newStats.totalQuartoScore = aggregatedQuartoScore;
+                  modesUpdate.totalQuartoScore = aggregatedQuartoScore;
+                  shouldUpdateDeviceModes = true;
+                }
+                if (aggregatedPylosScore > (newStats.totalPylosScore || 0)) {
+                  newStats.totalPylosScore = aggregatedPylosScore;
+                  modesUpdate.totalPylosScore = aggregatedPylosScore;
+                  shouldUpdateDeviceModes = true;
+                }
 
                 if (allUniqueBadges.size > (newStats.badges?.length || 0)) {
                   const mergedBadges = Array.from(allUniqueBadges.entries()).map(([id, difficulty]) => ({ id, difficulty, date: new Date().toISOString() }));
@@ -5709,6 +6150,8 @@ useEffect(() => {
                   aggregatedOnitamaScore +
                   aggregatedBadukScore +
                   aggregatedStrategoScore +
+                  aggregatedQuartoScore +
+                  aggregatedPylosScore +
                   aggregatedOrbitoScore - pointsSpent);
                   
                 setCloudScore(totalScoreOverall);
@@ -5730,9 +6173,11 @@ useEffect(() => {
                     totalOnitamaScore: aggregatedOnitamaScore,
                     totalBadukScore: aggregatedBadukScore,
                     totalStrategoScore: aggregatedStrategoScore,
+                    totalQuartoScore: aggregatedQuartoScore,
+                    totalPylosScore: aggregatedPylosScore,
                     totalOrbitoScore: aggregatedOrbitoScore,
                     totalScoreOverall: totalScoreOverall,
-                    totalGamesOverall: aggregatedBaseGames + aggregatedFugaGames + aggregatedAmazonsGames + aggregatedDomineeringGames + aggregatedAbaloneGames + aggregatedHexGames + aggregatedChainTriangleGames + aggregatedPenteGames + aggregatedShobuGames + aggregatedYinshGames + aggregatedOnitamaGames + aggregatedOrbitoGames + aggregatedBadukGames + aggregatedStrategoGames,
+                    totalGamesOverall: aggregatedBaseGames + aggregatedFugaGames + aggregatedAmazonsGames + aggregatedDomineeringGames + aggregatedAbaloneGames + aggregatedHexGames + aggregatedChainTriangleGames + aggregatedPenteGames + aggregatedShobuGames + aggregatedYinshGames + aggregatedOnitamaGames + aggregatedOrbitoGames + aggregatedBadukGames + aggregatedStrategoGames + aggregatedQuartoGames + aggregatedPylosGames,
                     totalGamesTarget: {
                        generale: aggregatedBaseGames,
                        corsa: aggregatedFugaGames,
@@ -5748,6 +6193,8 @@ useEffect(() => {
                        orbito: aggregatedOrbitoGames,
                        baduk: aggregatedBadukGames,
                        stratego: aggregatedStrategoGames,
+                       quarto: aggregatedQuartoGames,
+                       pylos: aggregatedPylosGames,
                     },
                     lastActive: now,
                   },
@@ -5860,6 +6307,8 @@ useEffect(() => {
           orbitoActionState: undefined,
           ...(updatedYinshState && { yinshState: updatedYinshState }),
           ...(updatedOnitamaState && { onitamaState: updatedOnitamaState }),
+          ...(updatedQuartoState && { quartoState: updatedQuartoState }),
+          ...(updatedPylosState && { pylosState: updatedPylosState }),
           ...(updatedBadukKoPoint !== undefined 
             ? { badukKoPoint: updatedBadukKoPoint } 
             : (isPass && prev.gameMode === "baduk" ? { badukKoPoint: null } : {})),
@@ -6315,7 +6764,7 @@ useEffect(() => {
         const nPlayers = prev.players.map((pl) => {
           if (pl.id === player.id) {
             const nPos = [...pl.positions];
-            nPos[pieceIdx] = path[1];
+            nPos[pieceIdx] = { ...path[1], id: nPos[pieceIdx]?.id };
             return { ...pl, positions: nPos };
           }
           return pl;
@@ -6327,7 +6776,7 @@ useEffect(() => {
         const nPlayers = gameState.players.map((pl) => {
           if (pl.id === player.id) {
             const nPos = [...pl.positions];
-            nPos[pieceIdx] = p;
+            nPos[pieceIdx] = { ...p, id: nPos[pieceIdx]?.id };
             return { ...pl, positions: nPos };
           }
           return pl;
@@ -6338,7 +6787,15 @@ useEffect(() => {
           (!gameState.gameMode?.startsWith("amazons") &&
             gameState.turnCount === 0) ||
           isCorsa ||
-          gameState.gameMode === "shobu"
+          gameState.gameMode === "shobu" ||
+          (gameState.gameMode === "dominio" &&
+            getWallOptions(
+              p,
+              gameState.walls,
+              gameState.boardTheme,
+              nPlayers,
+              gameState.gameMode,
+            ).length === 0)
         )
           advanceTurn(gameState.walls, nPlayers, false);
         else
@@ -6355,7 +6812,7 @@ useEffect(() => {
     const nPlayers = gameState.players.map((pl) => {
       if (pl.id === player.id) {
         const nPos = [...pl.positions];
-        nPos[pieceIdx] = p;
+        nPos[pieceIdx] = { ...p, id: nPos[pieceIdx]?.id };
         return { ...pl, positions: nPos };
       }
       return pl;
@@ -6424,7 +6881,15 @@ useEffect(() => {
         if (
           gameState.usedWallbreakerThisTurn ||
           (!gameState.gameMode?.startsWith("amazons") &&
-            gameState.turnCount === 0)
+            gameState.turnCount === 0) ||
+          (gameState.gameMode === "dominio" &&
+            getWallOptions(
+              p,
+              gameState.walls,
+              gameState.boardTheme,
+              nPlayers,
+              gameState.gameMode,
+            ).length === 0)
         )
           advanceTurn(gameState.walls, nPlayers, false);
         else
@@ -6674,6 +7139,253 @@ useEffect(() => {
     [gameState, isAIThinking, onlineMatchSession, advanceTurn]
   );
 
+  const handleQuartoSelectPiece = useCallback(
+    (pieceId: number) => {
+      if (gameState.status !== "playing") return;
+      if (isAIThinking) return;
+      if (onlineMatchSession && gameState.currentPlayerIndex !== onlineMatchSession.myPlayerIndex - 1) return;
+      if (!gameState.quartoState || gameState.quartoState.phase !== "select_piece") return;
+
+      const player = gameState.players[gameState.currentPlayerIndex];
+      if (player.isAI) return;
+      if (!gameState.quartoState.availablePieces.includes(pieceId)) return;
+
+      safePlaySound(() => SoundManager.playMovePiece());
+
+      const nextAvailable = gameState.quartoState.availablePieces.filter(p => p !== pieceId);
+      const nextQuartoState: import("./utils/quartoLogic").QuartoState = {
+        ...gameState.quartoState,
+        availablePieces: nextAvailable,
+        selectedPiece: pieceId,
+        selectedByPlayerId: player.id,
+        phase: "place_piece",
+      };
+
+      const nextPlayerIdx = (gameState.currentPlayerIndex + 1) % gameState.players.length;
+      setHumanMovesInSession(prev => prev + 1);
+      setGameState(prev => ({
+        ...prev,
+        quartoState: nextQuartoState,
+        currentPlayerIndex: nextPlayerIdx,
+        turnCount: prev.turnCount + 1,
+        lastMovedPlayerId: player.id,
+      }));
+    },
+    [gameState, isAIThinking, onlineMatchSession]
+  );
+
+  const handleQuartoPlacePiece = useCallback(
+    (r: number, c: number) => {
+      if (gameState.status !== "playing") return;
+      if (isAIThinking) return;
+      if (onlineMatchSession && gameState.currentPlayerIndex !== onlineMatchSession.myPlayerIndex - 1) return;
+      if (!gameState.quartoState || gameState.quartoState.phase !== "place_piece") return;
+      if (gameState.quartoState.selectedPiece === null) return;
+
+      const player = gameState.players[gameState.currentPlayerIndex];
+      if (player.isAI) return;
+      if (gameState.quartoState.board[r][c] !== null) return;
+
+      const pieceId = gameState.quartoState.selectedPiece;
+      const newBoard = gameState.quartoState.board.map(row => [...row]);
+      newBoard[r][c] = pieceId;
+
+      const winCheck = checkQuartoWin(newBoard, language);
+      const isBoardFull = gameState.quartoState.availablePieces.length === 0;
+
+      const nextQuartoState: import("./utils/quartoLogic").QuartoState = {
+        ...gameState.quartoState,
+        board: newBoard,
+        selectedPiece: null,
+        lastPlacedCell: { r, c, pieceId, playerId: player.id },
+        phase: "select_piece",
+        winningLine: winCheck.won ? winCheck.line : undefined,
+        winningAttributes: winCheck.won ? winCheck.attributes : undefined,
+        winner: winCheck.won ? player.id : isBoardFull ? "draw" : null,
+      };
+
+      setHumanMovesInSession(prev => prev + 1);
+
+      if (winCheck.won || isBoardFull) {
+        if (winCheck.won) {
+          safePlaySound(() => SoundManager.playVictory());
+        } else {
+          safePlaySound(() => SoundManager.playPlaceWall());
+        }
+        const nextPlayers = gameState.players.map(pl =>
+          pl.id === player.id && winCheck.won ? { ...pl, score: (pl.score || 0) + 1 } : pl
+        );
+        setGameState(prev => ({
+          ...prev,
+          players: nextPlayers,
+          quartoState: nextQuartoState,
+          turnCount: prev.turnCount + 1,
+          lastMovedPlayerId: player.id,
+        }));
+        setTimeout(() => {
+          advanceTurn(
+            gameState.walls,
+            nextPlayers,
+            false,
+            false,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            false,
+            undefined,
+            nextQuartoState
+          );
+        }, winCheck.won ? 2600 : 50);
+      } else {
+        safePlaySound(() => SoundManager.playPlaceWall());
+        setGameState(prev => ({
+          ...prev,
+          quartoState: nextQuartoState,
+          turnCount: prev.turnCount + 1,
+          lastMovedPlayerId: player.id,
+        }));
+      }
+    },
+    [gameState, isAIThinking, onlineMatchSession, advanceTurn, language]
+  );
+
+  const finalizePylosResult = useCallback(
+    (
+      nextState: PylosState,
+      turnCompleted: boolean,
+      playerId: PlayerId,
+      soundKind: "place" | "recover"
+    ) => {
+      setHumanMovesInSession((prev) => prev + 1);
+
+      if (nextState.winner) {
+        safePlaySound(() => SoundManager.playVictory());
+        const nextPlayers = gameState.players.map((pl) =>
+          pl.id === nextState.winner ? { ...pl, score: (pl.score || 0) + 1 } : pl
+        );
+        setGameState((prev) => ({
+          ...prev,
+          players: nextPlayers,
+          pylosState: nextState,
+          turnCount: prev.turnCount + 1,
+          lastMovedPlayerId: playerId,
+        }));
+        setTimeout(
+          () => {
+            advanceTurn(
+              gameState.walls,
+              nextPlayers,
+              false,
+              false,
+              undefined,
+              undefined,
+              undefined,
+              undefined,
+              false,
+              undefined,
+              undefined,
+              nextState
+            );
+          },
+          nextState.winReason === "apex" ? 2200 : 50
+        );
+      } else if (!turnCompleted) {
+        safePlaySound(() =>
+          soundKind === "place" ? SoundManager.playPlaceWall() : SoundManager.playMovePiece()
+        );
+        setGameState((prev) => ({
+          ...prev,
+          pylosState: nextState,
+          turnCount: prev.turnCount + 1,
+          lastMovedPlayerId: playerId,
+        }));
+      } else {
+        safePlaySound(() =>
+          soundKind === "place" ? SoundManager.playPlaceWall() : SoundManager.playMovePiece()
+        );
+        advanceTurn(
+          gameState.walls,
+          gameState.players,
+          false,
+          false,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          false,
+          undefined,
+          undefined,
+          nextState
+        );
+      }
+    },
+    [gameState, advanceTurn]
+  );
+
+  const handlePylosPlaceSphere = useCallback(
+    (to: PylosCoord) => {
+      if (gameState.status !== "playing") return;
+      if (isAIThinking) return;
+      if (onlineMatchSession && gameState.currentPlayerIndex !== onlineMatchSession.myPlayerIndex - 1) return;
+      if (!gameState.pylosState || gameState.pylosState.winner) return;
+
+      const player = gameState.players[gameState.currentPlayerIndex];
+      if (!player || player.isAI) return;
+
+      const res = applyPylosPlace(gameState.pylosState, to, player.id);
+      if (!res) return;
+      finalizePylosResult(res.nextState, res.turnCompleted, player.id, "place");
+    },
+    [gameState, isAIThinking, onlineMatchSession, finalizePylosResult]
+  );
+
+  const handlePylosRaiseSphere = useCallback(
+    (from: PylosCoord, to: PylosCoord) => {
+      if (gameState.status !== "playing") return;
+      if (isAIThinking) return;
+      if (onlineMatchSession && gameState.currentPlayerIndex !== onlineMatchSession.myPlayerIndex - 1) return;
+      if (!gameState.pylosState || gameState.pylosState.winner) return;
+
+      const player = gameState.players[gameState.currentPlayerIndex];
+      if (!player || player.isAI) return;
+
+      const res = applyPylosRaise(gameState.pylosState, from, to, player.id);
+      if (!res) return;
+      finalizePylosResult(res.nextState, res.turnCompleted, player.id, "place");
+    },
+    [gameState, isAIThinking, onlineMatchSession, finalizePylosResult]
+  );
+
+  const handlePylosRecoverSphere = useCallback(
+    (coord: PylosCoord) => {
+      if (gameState.status !== "playing") return;
+      if (isAIThinking) return;
+      if (onlineMatchSession && gameState.currentPlayerIndex !== onlineMatchSession.myPlayerIndex - 1) return;
+      if (!gameState.pylosState || gameState.pylosState.winner) return;
+
+      const player = gameState.players[gameState.currentPlayerIndex];
+      if (!player || player.isAI) return;
+
+      const res = applyPylosRecoverSphere(gameState.pylosState, coord, player.id);
+      if (!res) return;
+      finalizePylosResult(res.nextState, res.turnCompleted, player.id, "recover");
+    },
+    [gameState, isAIThinking, onlineMatchSession, finalizePylosResult]
+  );
+
+  const handlePylosFinishRecovery = useCallback(() => {
+    if (gameState.status !== "playing") return;
+    if (isAIThinking) return;
+    if (onlineMatchSession && gameState.currentPlayerIndex !== onlineMatchSession.myPlayerIndex - 1) return;
+    if (!gameState.pylosState || gameState.pylosState.phase !== "recover" || gameState.pylosState.winner) return;
+
+    const player = gameState.players[gameState.currentPlayerIndex];
+    if (!player || player.isAI) return;
+
+    const nextState = finishPylosRecovery(gameState.pylosState, player.id);
+    finalizePylosResult(nextState, true, player.id, "recover");
+  }, [gameState, isAIThinking, onlineMatchSession, finalizePylosResult]);
 
   const handleChainTrianglePegClick = useCallback(
     (peg: Peg) => {
@@ -6879,6 +7591,8 @@ useEffect(() => {
       !p ||
       !p.isAI ||
       gameState.winner ||
+      gameState.quartoState?.winner ||
+      gameState.pylosState?.winner ||
       aiRunningRef.current ||
       isStrategyOpen ||
       (gameState.gameMode === "baduk" && gameState.futureStates && gameState.futureStates.length > 0)
@@ -6898,7 +7612,9 @@ useEffect(() => {
             gameState.gameMode === "domineering" ||
             gameState.gameMode === "hex" ||
             gameState.gameMode === "pente" ||
-            gameState.gameMode === "yinsh"
+            gameState.gameMode === "yinsh" ||
+            gameState.gameMode === "quarto" ||
+            gameState.gameMode === "pylos"
           ) {
             if (gameState.gameMode === "domineering") {
               const bestMove = getBestDomineeringMoveForAI(
@@ -7050,6 +7766,208 @@ useEffect(() => {
                   });
                   aiRunningRef.current = false;
                   setIsAIThinking(false);
+              }
+            } else if (gameState.gameMode === "quarto") {
+              if (gameState.quartoState) {
+                const aiMove = getBestQuartoMoveForAI(
+                  gameState.quartoState,
+                  gameState.difficulty || difficulty
+                );
+                if (!aiMove) {
+                  aiRunningRef.current = false;
+                  setIsAIThinking(false);
+                  return;
+                }
+
+                if (aiMove.type === "select") {
+                  safePlaySound(() => SoundManager.playMovePiece());
+                  const chosenId = aiMove.pieceId;
+                  aiRunningRef.current = false;
+                  setIsAIThinking(false);
+                  setGameState(prev => {
+                    if (prev.status !== "playing" || !prev.quartoState) return prev;
+                    const qs = prev.quartoState;
+                    const nextAvailable = qs.availablePieces.filter(id => id !== chosenId);
+                    const nextQuartoState: import("./utils/quartoLogic").QuartoState = {
+                      ...qs,
+                      availablePieces: nextAvailable,
+                      selectedPiece: chosenId,
+                      selectedByPlayerId: p.id,
+                      phase: "place_piece",
+                    };
+                    const nextPlayerIdx = (prev.currentPlayerIndex + 1) % prev.players.length;
+                    return {
+                      ...prev,
+                      quartoState: nextQuartoState,
+                      currentPlayerIndex: nextPlayerIdx,
+                      turnCount: prev.turnCount + 1,
+                      lastMovedPlayerId: p.id,
+                    };
+                  });
+                } else if (aiMove.type === "place") {
+                  const { r, c } = aiMove;
+                  const qs = gameState.quartoState;
+                  if (qs.selectedPiece === null) {
+                    aiRunningRef.current = false;
+                    setIsAIThinking(false);
+                    return;
+                  }
+                  const pieceId = qs.selectedPiece;
+                  const newBoard = qs.board.map(row => [...row]);
+                  newBoard[r][c] = pieceId;
+
+                  const winCheck = checkQuartoWin(newBoard, language);
+                  const isBoardFull = qs.availablePieces.length === 0;
+
+                  const nextQuartoState: import("./utils/quartoLogic").QuartoState = {
+                    ...qs,
+                    board: newBoard,
+                    selectedPiece: null,
+                    lastPlacedCell: { r, c, pieceId, playerId: p.id },
+                    phase: "select_piece",
+                    winningLine: winCheck.won ? winCheck.line : undefined,
+                    winningAttributes: winCheck.won ? winCheck.attributes : undefined,
+                    winner: winCheck.won ? p.id : isBoardFull ? "draw" : null,
+                  };
+
+                  aiRunningRef.current = false;
+                  setIsAIThinking(false);
+
+                  if (winCheck.won || isBoardFull) {
+                    safePlaySound(() => SoundManager.playPlaceWall());
+                    const nextPlayers = gameState.players.map(pl =>
+                      pl.id === p.id && winCheck.won ? { ...pl, score: (pl.score || 0) + 1 } : pl
+                    );
+                    setGameState(prev => ({
+                      ...prev,
+                      players: nextPlayers,
+                      quartoState: nextQuartoState,
+                      turnCount: prev.turnCount + 1,
+                      lastMovedPlayerId: p.id,
+                    }));
+                    setTimeout(() => {
+                      advanceTurn(
+                        gameState.walls,
+                        nextPlayers,
+                        false,
+                        false,
+                        undefined,
+                        undefined,
+                        undefined,
+                        undefined,
+                        false,
+                        undefined,
+                        nextQuartoState
+                      );
+                    }, winCheck.won ? 2600 : 50);
+                  } else {
+                    safePlaySound(() => SoundManager.playPlaceWall());
+                    setGameState(prev => ({
+                      ...prev,
+                      quartoState: nextQuartoState,
+                      turnCount: prev.turnCount + 1,
+                      lastMovedPlayerId: p.id,
+                    }));
+                  }
+                }
+              }
+            } else if (gameState.gameMode === "pylos") {
+              if (gameState.pylosState) {
+                const aiMove = getBestPylosMoveForAI(
+                  gameState.pylosState,
+                  p.id,
+                  gameState.difficulty || difficulty
+                );
+                if (!aiMove) {
+                  aiRunningRef.current = false;
+                  setIsAIThinking(false);
+                  return;
+                }
+
+                let res: { nextState: PylosState; turnCompleted: boolean } | null = null;
+                let soundKind: "place" | "recover" = "place";
+
+                if (aiMove.type === "recover_step") {
+                  soundKind = "recover";
+                  if (aiMove.coord === null) {
+                    res = {
+                      nextState: finishPylosRecovery(gameState.pylosState, p.id),
+                      turnCompleted: true,
+                    };
+                  } else {
+                    res = applyPylosRecoverSphere(gameState.pylosState, aiMove.coord, p.id);
+                  }
+                } else if (aiMove.type === "place") {
+                  res = applyPylosPlace(gameState.pylosState, aiMove.to, p.id);
+                } else if (aiMove.type === "raise") {
+                  res = applyPylosRaise(gameState.pylosState, aiMove.from, aiMove.to, p.id);
+                }
+
+                aiRunningRef.current = false;
+                setIsAIThinking(false);
+
+                if (!res) return;
+
+                if (res.nextState.winner) {
+                  safePlaySound(() => SoundManager.playVictory());
+                  const nextPlayers = gameState.players.map((pl) =>
+                    pl.id === res!.nextState.winner ? { ...pl, score: (pl.score || 0) + 1 } : pl
+                  );
+                  setGameState((prev) => ({
+                    ...prev,
+                    players: nextPlayers,
+                    pylosState: res!.nextState,
+                    turnCount: prev.turnCount + 1,
+                    lastMovedPlayerId: p.id,
+                  }));
+                  setTimeout(
+                    () => {
+                      advanceTurn(
+                        gameState.walls,
+                        nextPlayers,
+                        false,
+                        false,
+                        undefined,
+                        undefined,
+                        undefined,
+                        undefined,
+                        false,
+                        undefined,
+                        undefined,
+                        res!.nextState
+                      );
+                    },
+                    res.nextState.winReason === "apex" ? 2200 : 50
+                  );
+                } else if (!res.turnCompleted) {
+                  safePlaySound(() =>
+                    soundKind === "place" ? SoundManager.playPlaceWall() : SoundManager.playMovePiece()
+                  );
+                  setGameState((prev) => ({
+                    ...prev,
+                    pylosState: res!.nextState,
+                    turnCount: prev.turnCount + 1,
+                    lastMovedPlayerId: p.id,
+                  }));
+                } else {
+                  safePlaySound(() =>
+                    soundKind === "place" ? SoundManager.playPlaceWall() : SoundManager.playMovePiece()
+                  );
+                  advanceTurn(
+                    gameState.walls,
+                    gameState.players,
+                    false,
+                    false,
+                    undefined,
+                    undefined,
+                    undefined,
+                    undefined,
+                    false,
+                    undefined,
+                    undefined,
+                    res.nextState
+                  );
+                }
               }
             } else if (gameState.gameMode === "pente") {
               // Use the new getBestPenteMoveForAI
@@ -7212,22 +8130,25 @@ useEffect(() => {
                     if (e.data.type === 'MOVE_RESULT') {
                         badukWorkerRef.current!.onmessage = null;
                         const move = e.data.move;
-                        const pos = move !== null ? { r: Math.floor(move / size), c: move % size } : null;
-                        if (pos) {
-                          const res = performBadukMove(gameState.players, pos.r, pos.c, gameState.currentPlayerIndex, size, gameState.badukKoPoint);
-                          if (res.valid && res.newPlayers) {
-                              safePlaySound(() => SoundManager.playBadukStone());
-                              if (res.captured && res.captured.length > 0) {
-                                  safePlaySound(() => SoundManager.playBadukCapture());
-                                  setPenteDyingPieces((prev) => [...prev, ...res.captured!]);
-                                  res.newPlayers[gameState.currentPlayerIndex].penteCaptures = (res.newPlayers[gameState.currentPlayerIndex].penteCaptures || 0) + res.captured.length;
-                              }
-                              advanceTurn(gameState.walls, res.newPlayers, false, false, undefined, undefined, undefined, res.newKoPoint);
-                          } else {
-                              advanceTurn(gameState.walls, gameState.players, true); 
-                          }
+                        let pos = move !== null ? { r: Math.floor(move / size), c: move % size } : null;
+                        let res = pos ? performBadukMove(gameState.players, pos.r, pos.c, gameState.currentPlayerIndex, size, gameState.badukKoPoint) : { valid: false };
+                        if (!res.valid || !res.newPlayers) {
+                            const fallbackPos = getBestBadukMoveForAI(gameState, p.id, "normale");
+                            if (fallbackPos) {
+                                pos = fallbackPos;
+                                res = performBadukMove(gameState.players, pos.r, pos.c, gameState.currentPlayerIndex, size, gameState.badukKoPoint);
+                            }
+                        }
+                        if (pos && res.valid && res.newPlayers) {
+                            safePlaySound(() => SoundManager.playBadukStone());
+                            if (res.captured && res.captured.length > 0) {
+                                safePlaySound(() => SoundManager.playBadukCapture());
+                                setPenteDyingPieces((prev) => [...prev, ...res.captured!]);
+                                res.newPlayers[gameState.currentPlayerIndex].penteCaptures = (res.newPlayers[gameState.currentPlayerIndex].penteCaptures || 0) + res.captured.length;
+                            }
+                            advanceTurn(gameState.walls, res.newPlayers, false, false, undefined, undefined, undefined, res.newKoPoint);
                         } else {
-                           advanceTurn(gameState.walls, gameState.players, true); 
+                            advanceTurn(gameState.walls, gameState.players, true);
                         }
                         aiRunningRef.current = false;
                         setIsAIThinking(false);
@@ -7890,6 +8811,8 @@ useEffect(() => {
         ? 2600 // give a slight buffer over the 2.5s player animation
         : gameState.gameMode === "yinsh"
           ? (gameState.yinshState?.lastMove ? Math.max(800, 3100 - (Date.now() - gameState.yinshState.lastMove.timestamp)) : 800)
+        : gameState.gameMode === "pylos" && gameState.pylosState?.phase === "recover"
+          ? 550
         : gameState.gameMode === "abalone" && undoWindowActive
           ? 2000
           : isPlayerSuspended
@@ -7915,6 +8838,12 @@ useEffect(() => {
     boardTheme,
     gameState.orbitoPhase,
     gameState.yinshState?.phase,
+    gameState.quartoState?.phase,
+    gameState.quartoState?.selectedPiece,
+    gameState.pylosState?.phase,
+    gameState.pylosState?.recoverCount,
+    gameState.pylosState?.reserve[1],
+    gameState.pylosState?.reserve[2],
     onlineMatchSession,
   ]);
 
@@ -7981,19 +8910,20 @@ useEffect(() => {
   }
 
   const content = (
-    <div className={`flex-1 flex h-full bg-slate-950 text-white ${gameMode === "stratego" && gameState.status === "playing" ? "p-1 sm:p-2.5" : "p-2 sm:p-4"} pb-[max(1rem,calc(env(safe-area-inset-bottom,0px)+0.5rem))] sm:pb-4 overflow-hidden relative gap-3 sm:gap-4 justify-between items-stretch`}>
+    <div className={`flex-1 flex h-full bg-slate-950 text-white ${gameMode === "stratego" && gameState.status === "playing" ? "p-1 sm:p-2" : "p-2 sm:p-2.5 md:p-3 lg:p-4"} pb-[max(1rem,calc(env(safe-area-inset-bottom,0px)+0.5rem))] sm:pb-3 lg:pb-4 overflow-hidden relative gap-2 sm:gap-2.5 md:gap-3 lg:gap-4 justify-between items-stretch`}>
       {/* PC LEFT PANEL: Trivia & YouTube Links */}
-      <div className="hidden lg:flex w-80 xl:w-96 shrink-0 h-full flex-col bg-slate-900/80 rounded-[2.5rem] border border-white/10 p-4 sm:p-5 overflow-hidden shadow-2xl backdrop-blur-xl">
+      <div className={`hidden sm:flex ${gameMode === "stratego" && gameState.status === "playing" ? "sm:w-40 md:w-48 lg:w-64 xl:w-80 2xl:w-96" : "sm:w-44 md:w-56 lg:w-72 xl:w-80 2xl:w-96"} shrink-0 h-full flex-col bg-slate-900/80 rounded-3xl lg:rounded-[2.5rem] border border-white/10 p-3 md:p-4 lg:p-5 overflow-hidden shadow-2xl backdrop-blur-xl`}>
         <DesktopTriviaPanel
           language={language}
           selectedGame={pcSelectedGame}
           onSelectGame={(m) => setPcSelectedGame(m)}
           historyData={historyData}
+          onOpenPylosRules={() => setIsPylosRulesOpen(true)}
         />
       </div>
 
       {/* CENTER PANEL: Setup or Game View */}
-      <div className={`flex-1 min-h-0 flex flex-col w-full ${gameMode === "stratego" && gameState.status === "playing" ? "max-w-2xl lg:max-w-3xl xl:max-w-4xl" : "max-w-sm lg:max-w-md xl:max-w-xl"} mx-auto h-full relative overflow-hidden`}>
+      <div className={`flex-1 min-w-0 min-h-0 flex flex-col w-full ${gameMode === "stratego" && gameState.status === "playing" ? "max-w-2xl lg:max-w-3xl xl:max-w-4xl" : "max-w-sm lg:max-w-md xl:max-w-xl"} mx-auto h-full relative overflow-hidden`}>
       {gameMode === "stratego" && gameState.status === "playing" ? (
         <StrategoBoard
           savedGameData={strategoSavedGame}
@@ -8027,7 +8957,7 @@ useEffect(() => {
           language={language}
           isAdmin={isStrategoAdmin}
           initialDifficulty={strategoDifficulty}
-          initialStarter={onlineMatchSession ? "red" : strategoStarter === "human" ? "red" : strategoStarter === "ai" ? "blue" : (Math.random() < 0.5 ? "red" : "blue")}
+          initialStarter={onlineMatchSession ? "blue" : strategoStarter === "human" ? "red" : strategoStarter === "ai" ? "blue" : (Math.random() < 0.5 ? "red" : "blue")}
           initialPreset={strategoPreset}
           onlineMatchSession={onlineMatchSession}
           onOnlineAbandon={handleOnlineAbandon}
@@ -8038,22 +8968,31 @@ useEffect(() => {
         <div className="flex-1 min-h-0 flex flex-col w-full max-w-sm mx-auto overflow-y-auto no-scrollbar py-1 sm:py-2">
           {setupView === "grid" ? (
             <>
-              <div className="w-full flex items-center justify-between p-2.5 bg-slate-900/40 rounded-[1.5rem] border border-white/5 backdrop-blur-xl shadow-2xl shrink-0 mb-3">
+              <div className="w-full flex items-center justify-between p-2.5 bg-slate-900/40 rounded-[1.5rem] border border-white/5 backdrop-blur-xl shadow-2xl shrink-0 mb-3 gap-2">
                 <div
-                  className="flex items-center gap-2 pl-1 cursor-pointer"
+                  className="flex items-center gap-2 pl-1 cursor-pointer min-w-0"
                   onClick={() => {
                     if (userName === "ZioSeb" && userLocation === "Sant'Alfio")
                       setIsAdminStatsOpen(true);
                   }}
                 >
                   <Logo size={32} />
-                  <h1 className="text-xl font-black italic text-blue-400">
+                  <h1 className="text-lg sm:text-xl font-black italic text-blue-400 truncate">
                     WALL GO AI
                   </h1>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
                   <PWAInstallButton language={language} />
+
+                  <button
+                    onClick={() => setIsAppSettingsOpen(true)}
+                    className="w-9 h-9 bg-slate-800/80 hover:bg-slate-700/80 rounded-xl border border-white/10 flex items-center justify-center text-slate-300 hover:text-white transition-all shadow-md active:scale-95"
+                    title={t.settings}
+                    aria-label={t.settings}
+                  >
+                    <Settings className="w-4 h-4 text-blue-400" />
+                  </button>
 
                   {!Capacitor.isNativePlatform() && (
                     <button
@@ -8107,19 +9046,252 @@ useEffect(() => {
                 {(() => {
                   const allGames = [
                     { m: "dominio", i: (<div className="drop-shadow-[0_0_8px_rgba(59,130,246,0.8)] scale-125"><Logo size={48} /></div>), n: "Wall Go AI", l: language === "it" ? "Territorio" : "Territory", bg: "bg-blue-600/20", from: "from-blue-500/20", shadow: "shadow-blue-900/50", txt: "text-blue-400", txtSub: "text-blue-300/80" },
-                    { m: "corsa", i: "🏁", n: "Quoridor", l: language === "it" ? "Percorso" : "Path", bg: "bg-orange-600/20", from: "from-orange-500/20", shadow: "shadow-orange-900/50", txt: "text-orange-400", txtSub: "text-orange-300/80" },
-                    { m: "amazons", i: "🏹", n: "Amazons", l: language === "it" ? "Distruzione" : "Destroy", bg: "bg-purple-600/20", from: "from-purple-500/20", shadow: "shadow-purple-900/50", txt: "text-purple-400", txtSub: "text-purple-300/80" },
-                    { m: "domineering", i: "⚔️", n: "Domineering", l: language === "it" ? "Blocco" : "Block", bg: "bg-rose-600/20", from: "from-rose-500/20", shadow: "shadow-rose-900/50", txt: "text-rose-400", txtSub: "text-rose-300/80" },
-                    { m: "hex", i: "⬡", n: "Hex", l: language === "it" ? "Connessione" : "Connection", bg: "bg-fuchsia-600/20", from: "from-fuchsia-500/20", shadow: "shadow-fuchsia-900/50", txt: "text-fuchsia-400", txtSub: "text-fuchsia-300/80" },
-                    { m: "pente", i: "⭐", n: "Pente", l: language === "it" ? "Allinea 5" : "Align 5", bg: "bg-teal-900/30", from: "from-teal-500/20", shadow: "shadow-[0_0_20px_rgba(20,184,166,0.3)]", txt: "text-teal-400", txtSub: "text-teal-300/60" },
-                    { m: "orbito", i: "🪐", n: "Orbito", l: language === "it" ? "Allineamento" : "Align", bg: "bg-pink-600/20", from: "from-pink-500/20", shadow: "shadow-pink-900/50", txt: "text-pink-400", txtSub: "text-pink-300/80" },
-                    { m: "chain_triangle", i: "🔺", n: "Chain Triangle", l: language === "it" ? "Connessione" : "Connection", bg: "bg-yellow-600/20", from: "from-yellow-500/20", shadow: "shadow-yellow-900/50", txt: "text-yellow-400", txtSub: "text-yellow-300/80" },
-                    { m: "shobu", i: "🪨", n: "Shobu", l: language === "it" ? "Pietre" : "Stones", bg: "bg-cyan-600/20", from: "from-cyan-500/20", shadow: "shadow-cyan-900/50", txt: "text-cyan-400", txtSub: "text-cyan-300/80" },
-                    { m: "yinsh", i: "💍", n: "Yinsh", l: language === "it" ? "Anelli" : "Rings", bg: "bg-emerald-600/20", from: "from-emerald-500/20", shadow: "shadow-emerald-900/50", txt: "text-emerald-400", txtSub: "text-emerald-300/80" },
-                    { m: "abalone", i: "🎱", n: "Abalone", l: language === "it" ? "Spinta" : "Push", bg: "bg-slate-700/80", from: "from-slate-400/20", shadow: "shadow-[0_0_20px_rgba(148,163,184,0.3)]", txt: "text-slate-200", txtSub: "text-slate-300/80" },
-                    { m: "onitama", i: "🏯", n: "Onitama", l: language === "it" ? "Spirito" : "Spirit", bg: "bg-red-900/30", from: "from-red-500/20", shadow: "shadow-red-900/50", txt: "text-red-400", txtSub: "text-red-300/60" },
-                    { m: "baduk", i: "⚫", n: "Baduk / Go", l: language === "it" ? "Territorio" : "Territory", bg: "bg-zinc-600/20", from: "from-zinc-500/20", shadow: "shadow-[0_0_20px_rgba(113,113,122,0.3)]", txt: "text-zinc-300", txtSub: "text-zinc-400" },
-                    { m: "stratego", i: "🚩", n: "Stratego", l: language === "it" ? "Strategia" : "Strategy", bg: "bg-amber-600/20", from: "from-amber-500/20", shadow: "shadow-amber-900/50", txt: "text-amber-400", txtSub: "text-amber-300/80" }
+                    { m: "corsa", i: (<span className="anim-icon-corsa">🏁</span>), n: "Quoridor", l: language === "it" ? "Percorso" : "Path", bg: "bg-orange-600/20", from: "from-orange-500/20", shadow: "shadow-orange-900/50", txt: "text-orange-400", txtSub: "text-orange-300/80" },
+                    { m: "amazons", i: (<span className="anim-icon-amazons">🏹</span>), n: "Amazons", l: language === "it" ? "Distruzione" : "Destroy", bg: "bg-purple-600/20", from: "from-purple-500/20", shadow: "shadow-purple-900/50", txt: "text-purple-400", txtSub: "text-purple-300/80" },
+                    { m: "domineering", i: (<span className="anim-icon-domineering">⚔️</span>), n: "Domineering", l: language === "it" ? "Blocco" : "Block", bg: "bg-rose-600/20", from: "from-rose-500/20", shadow: "shadow-rose-900/50", txt: "text-rose-400", txtSub: "text-rose-300/80" },
+                    { m: "hex", i: (<span className="anim-icon-hex">⬡</span>), n: "Hex", l: language === "it" ? "Connessione" : "Connection", bg: "bg-fuchsia-600/20", from: "from-fuchsia-500/20", shadow: "shadow-fuchsia-900/50", txt: "text-fuchsia-400", txtSub: "text-fuchsia-300/80" },
+                    { m: "pente", i: (<span className="anim-icon-pente">⭐</span>), n: "Pente", l: language === "it" ? "Allinea 5" : "Align 5", bg: "bg-teal-900/30", from: "from-teal-500/20", shadow: "shadow-[0_0_20px_rgba(20,184,166,0.3)]", txt: "text-teal-400", txtSub: "text-teal-300/60" },
+                    { m: "orbito", i: (<span className="anim-icon-orbito">🪐</span>), n: "Orbito", l: language === "it" ? "Allineamento" : "Align", bg: "bg-pink-600/20", from: "from-pink-500/20", shadow: "shadow-pink-900/50", txt: "text-pink-400", txtSub: "text-pink-300/80" },
+                    { m: "chain_triangle", i: (<span className="anim-icon-chain">🔺</span>), n: "Chain Triangle", l: language === "it" ? "Connessione" : "Connection", bg: "bg-yellow-600/20", from: "from-yellow-500/20", shadow: "shadow-yellow-900/50", txt: "text-yellow-400", txtSub: "text-yellow-300/80" },
+                    { m: "shobu", i: (<span className="anim-icon-shobu">🪨</span>), n: "Shobu", l: language === "it" ? "Pietre" : "Stones", bg: "bg-cyan-600/20", from: "from-cyan-500/20", shadow: "shadow-cyan-900/50", txt: "text-cyan-400", txtSub: "text-cyan-300/80" },
+                    { m: "yinsh", i: (<span className="anim-icon-yinsh">💍</span>), n: "Yinsh", l: language === "it" ? "Anelli" : "Rings", bg: "bg-emerald-600/20", from: "from-emerald-500/20", shadow: "shadow-emerald-900/50", txt: "text-emerald-400", txtSub: "text-emerald-300/80" },
+                    { m: "abalone", i: (<span className="anim-icon-abalone">🎱</span>), n: "Abalone", l: language === "it" ? "Spinta" : "Push", bg: "bg-slate-700/80", from: "from-slate-400/20", shadow: "shadow-[0_0_20px_rgba(148,163,184,0.3)]", txt: "text-slate-200", txtSub: "text-slate-300/80" },
+                    { m: "onitama", i: (<span className="anim-icon-onitama">🏯</span>), n: "Onitama", l: language === "it" ? "Spirito" : "Spirit", bg: "bg-red-900/30", from: "from-red-500/20", shadow: "shadow-red-900/50", txt: "text-red-400", txtSub: "text-red-300/60" },
+                    {
+                      m: "baduk",
+                      i: (
+                        <svg
+                          viewBox="0 0 80 80"
+                          className="w-10 h-10 sm:w-11 sm:h-11 drop-shadow-[0_4px_10px_rgba(0,0,0,0.65)] overflow-visible"
+                          fill="none"
+                          xmlns="http://www.w3.org/2000/svg"
+                        >
+                          <defs>
+                            <radialGradient id="badukHomeBlack" cx="32%" cy="28%" r="68%">
+                              <stop offset="0%" stopColor="#64748b" />
+                              <stop offset="38%" stopColor="#1e293b" />
+                              <stop offset="100%" stopColor="#020617" />
+                            </radialGradient>
+                            <radialGradient id="badukHomeWhite" cx="32%" cy="28%" r="68%">
+                              <stop offset="0%" stopColor="#ffffff" />
+                              <stop offset="65%" stopColor="#e2e8f0" />
+                              <stop offset="100%" stopColor="#94a3b8" />
+                            </radialGradient>
+                            <linearGradient id="badukHomeBoard" x1="0%" y1="0%" x2="100%" y2="100%">
+                              <stop offset="0%" stopColor="#f59e0b" />
+                              <stop offset="55%" stopColor="#d97706" />
+                              <stop offset="100%" stopColor="#92400e" />
+                            </linearGradient>
+                          </defs>
+                          {/* Isometric Kaya Goban Base */}
+                          <polygon points="8,49 40,65 40,71 8,55" fill="#78350f" />
+                          <polygon points="72,49 40,65 40,71 72,55" fill="#451a03" />
+                          <polygon
+                            points="40,33 72,49 40,65 8,49"
+                            fill="url(#badukHomeBoard)"
+                            stroke="#fcd34d"
+                            strokeWidth="1"
+                          />
+                          {/* Goban Grid Lines */}
+                          <line x1="24" y1="41" x2="56" y2="57" stroke="#451a03" strokeWidth="1.1" opacity="0.7" />
+                          <line x1="32" y1="37" x2="64" y2="53" stroke="#451a03" strokeWidth="1.1" opacity="0.6" />
+                          <line x1="16" y1="45" x2="48" y2="61" stroke="#451a03" strokeWidth="1.1" opacity="0.6" />
+                          <line x1="56" y1="41" x2="24" y2="57" stroke="#451a03" strokeWidth="1.1" opacity="0.7" />
+                          <line x1="48" y1="37" x2="16" y2="53" stroke="#451a03" strokeWidth="1.1" opacity="0.6" />
+                          <line x1="64" y1="45" x2="32" y2="61" stroke="#451a03" strokeWidth="1.1" opacity="0.6" />
+                          {/* Central Hoshi & Expanding Qi Ripple */}
+                          <circle cx="40" cy="49" r="2" fill="#451a03" />
+                          <ellipse cx="40" cy="49" rx="6" ry="3" stroke="#38bdf8" strokeWidth="1.4" fill="none">
+                            <animate attributeName="rx" values="4;20;4" dur="2.8s" repeatCount="indefinite" />
+                            <animate attributeName="ry" values="2;10;2" dur="2.8s" repeatCount="indefinite" />
+                            <animate attributeName="opacity" values="0.85;0;0.85" dur="2.8s" repeatCount="indefinite" />
+                          </ellipse>
+                          {/* Rotating Yin-Yang Energy Ring */}
+                          <g transform="translate(40, 38)">
+                            <ellipse
+                              cx="0"
+                              cy="0"
+                              rx="25"
+                              ry="12"
+                              stroke="#fbbf24"
+                              strokeWidth="1.4"
+                              strokeDasharray="18 14"
+                              opacity="0.75"
+                            >
+                              <animateTransform
+                                attributeName="transform"
+                                type="rotate"
+                                from="0"
+                                to="360"
+                                dur="7s"
+                                repeatCount="indefinite"
+                              />
+                            </ellipse>
+                          </g>
+                          {/* Animated 3D Black Stone (Left/Top) */}
+                          <g>
+                            <animateTransform
+                              attributeName="transform"
+                              type="translate"
+                              values="0,0; 2,-3.5; 0,0; -1.5,1.5; 0,0"
+                              dur="3.2s"
+                              repeatCount="indefinite"
+                            />
+                            <ellipse cx="28" cy="46.5" rx="11.5" ry="7.2" fill="rgba(0,0,0,0.45)" />
+                            <ellipse cx="28" cy="43.5" rx="11.5" ry="8" fill="url(#badukHomeBlack)" stroke="#475569" strokeWidth="0.8" />
+                            <ellipse cx="24.5" cy="40.5" rx="4" ry="2.1" fill="#ffffff" opacity="0.35" />
+                          </g>
+                          {/* Animated 3D White Stone (Right/Bottom) */}
+                          <g>
+                            <animateTransform
+                              attributeName="transform"
+                              type="translate"
+                              values="0,0; -2,-4; 0,0; 1.5,1.5; 0,0"
+                              dur="3.2s"
+                              begin="1.6s"
+                              repeatCount="indefinite"
+                            />
+                            <ellipse cx="51" cy="51.5" rx="11.5" ry="7.2" fill="rgba(0,0,0,0.4)" />
+                            <ellipse cx="51" cy="48.5" rx="11.5" ry="8" fill="url(#badukHomeWhite)" stroke="#cbd5e1" strokeWidth="0.8" />
+                            <ellipse cx="47.5" cy="45.5" rx="4.2" ry="2.2" fill="#ffffff" opacity="0.85" />
+                          </g>
+                          {/* Floating Spirit Stone Spark */}
+                          <circle cx="40" cy="24" r="3" fill="#38bdf8">
+                            <animate attributeName="cy" values="22;28;22" dur="2.2s" repeatCount="indefinite" />
+                            <animate attributeName="opacity" values="0.9;0.35;0.9" dur="2.2s" repeatCount="indefinite" />
+                          </circle>
+                        </svg>
+                      ),
+                      n: "Baduk / Go",
+                      l: language === "it" ? "Territorio" : "Territory",
+                      bg: "bg-amber-500/15",
+                      from: "from-amber-500/20",
+                      shadow: "shadow-[0_0_20px_rgba(245,158,11,0.25)]",
+                      txt: "text-amber-300",
+                      txtSub: "text-amber-200/80",
+                    },
+                    {
+                      m: "quarto",
+                      i: (
+                        <svg
+                          viewBox="0 0 80 80"
+                          className="w-10 h-10 sm:w-11 sm:h-11 drop-shadow-[0_5px_10px_rgba(0,0,0,0.65)] overflow-visible"
+                          fill="none"
+                          xmlns="http://www.w3.org/2000/svg"
+                        >
+                          {/* 3D Mahogany Board Base */}
+                          <polygon points="8,54 40,68 40,73 8,59" fill="#431a0d" />
+                          <polygon points="72,54 40,68 40,73 72,59" fill="#2d1007" />
+                          <polygon
+                            points="40,39 72,54 40,68 8,54"
+                            fill="#7c331a"
+                            stroke="#9a4224"
+                            strokeWidth="1.2"
+                          />
+                          {/* Glowing Alignment Pulse on Board */}
+                          <ellipse cx="40" cy="53.5" rx="18" ry="8" fill="none" stroke="#fbbf24" strokeWidth="1.3">
+                            <animate attributeName="rx" values="10;22;10" dur="3s" repeatCount="indefinite" />
+                            <animate attributeName="ry" values="4.5;10;4.5" dur="3s" repeatCount="indefinite" />
+                            <animate attributeName="opacity" values="0.7;0.1;0.7" dur="3s" repeatCount="indefinite" />
+                          </ellipse>
+                          {/* Animated 3D Quarto Pieces on Board */}
+                          <g>
+                            <animateTransform attributeName="transform" type="translate" values="0,0; 0,-3.5; 0,0" dur="2.4s" begin="0s" repeatCount="indefinite" />
+                            <Quarto3DPiece pieceId={9} cx={27} cy={52} scale={0.42} />
+                          </g>
+                          <g>
+                            <animateTransform attributeName="transform" type="translate" values="0,0; 0,-4; 0,0" dur="2.4s" begin="0.6s" repeatCount="indefinite" />
+                            <Quarto3DPiece pieceId={2} cx={41} cy={46} scale={0.42} />
+                          </g>
+                          <g>
+                            <animateTransform attributeName="transform" type="translate" values="0,0; 0,-3.5; 0,0" dur="2.4s" begin="1.2s" repeatCount="indefinite" />
+                            <Quarto3DPiece pieceId={12} cx={52} cy={54} scale={0.42} />
+                          </g>
+                          <g>
+                            <animateTransform attributeName="transform" type="translate" values="0,0; 0,-3.5; 0,0" dur="2.4s" begin="1.8s" repeatCount="indefinite" />
+                            <Quarto3DPiece pieceId={1} cx={38} cy={59} scale={0.42} />
+                          </g>
+                        </svg>
+                      ),
+                      n: "Quarto",
+                      l:
+                        language === "it"
+                          ? "Logica"
+                          : language === "fr"
+                            ? "Logique"
+                            : language === "de"
+                              ? "Logik"
+                              : language === "es"
+                                ? "Lógica"
+                                : "Logic",
+                      bg: "bg-indigo-600/20",
+                      from: "from-indigo-500/20",
+                      shadow: "shadow-indigo-900/50",
+                      txt: "text-indigo-400",
+                      txtSub: "text-indigo-300/80",
+                    },
+                    {
+                      m: "pylos",
+                      i: (
+                        <svg
+                          viewBox="0 0 80 80"
+                          className="w-10 h-10 sm:w-11 sm:h-11 drop-shadow-[0_5px_10px_rgba(0,0,0,0.65)] overflow-visible"
+                          fill="none"
+                          xmlns="http://www.w3.org/2000/svg"
+                        >
+                          <defs>
+                            <radialGradient id="pylosLightSphere" cx="32%" cy="28%" r="68%">
+                              <stop offset="0%" stopColor="#fef3c7" />
+                              <stop offset="55%" stopColor="#f59e0b" />
+                              <stop offset="100%" stopColor="#92400e" />
+                            </radialGradient>
+                            <radialGradient id="pylosDarkSphere" cx="32%" cy="28%" r="68%">
+                              <stop offset="0%" stopColor="#93c5fd" />
+                              <stop offset="50%" stopColor="#2563eb" />
+                              <stop offset="100%" stopColor="#1e1b4b" />
+                            </radialGradient>
+                          </defs>
+                          {/* 3D Isometric Wooden Base */}
+                          <polygon points="8,56 40,70 40,75 8,61" fill="#5c2d16" />
+                          <polygon points="72,56 40,70 40,75 72,61" fill="#3b1a0b" />
+                          <polygon
+                            points="40,42 72,56 40,70 8,56"
+                            fill="#854d27"
+                            stroke="#d97706"
+                            strokeWidth="1.2"
+                          />
+                          {/* Bottom Layer Spheres (Base of Pyramid) */}
+                          <circle cx="26" cy="52" r="7.5" fill="url(#pylosDarkSphere)" stroke="#60a5fa" strokeWidth="0.6" />
+                          <circle cx="40" cy="46" r="7.5" fill="url(#pylosLightSphere)" stroke="#fde68a" strokeWidth="0.6" />
+                          <circle cx="54" cy="52" r="7.5" fill="url(#pylosDarkSphere)" stroke="#60a5fa" strokeWidth="0.6" />
+                          <circle cx="40" cy="58" r="7.8" fill="url(#pylosLightSphere)" stroke="#fde68a" strokeWidth="0.6" />
+                          {/* Middle Layer Spheres */}
+                          <circle cx="33" cy="43" r="7.5" fill="url(#pylosLightSphere)" stroke="#fde68a" strokeWidth="0.6" />
+                          <circle cx="47" cy="43" r="7.5" fill="url(#pylosDarkSphere)" stroke="#60a5fa" strokeWidth="0.6" />
+                          <circle cx="40" cy="48" r="7.8" fill="url(#pylosDarkSphere)" stroke="#60a5fa" strokeWidth="0.6" />
+                          {/* Animated Apex Sphere */}
+                          <g>
+                            <animateTransform
+                              attributeName="transform"
+                              type="translate"
+                              values="0,0; 0,-4.5; 0,0"
+                              dur="2.4s"
+                              repeatCount="indefinite"
+                            />
+                            <circle cx="40" cy="34" r="8.2" fill="url(#pylosLightSphere)" stroke="#fef08a" strokeWidth="1" />
+                            <ellipse cx="37.5" cy="31.5" rx="2.8" ry="1.6" fill="#ffffff" opacity="0.75" />
+                          </g>
+                        </svg>
+                      ),
+                      n: "Pylos",
+                      l: language === "it" ? "Piramide" : "Pyramid",
+                      bg: "bg-sky-600/20",
+                      from: "from-sky-500/20",
+                      shadow: "shadow-sky-900/50",
+                      txt: "text-sky-400",
+                      txtSub: "text-sky-300/80",
+                    },
+                    { m: "stratego", i: (<span className="anim-icon-stratego">🚩</span>), n: "Stratego", l: language === "it" ? "Strategia" : "Strategy", bg: "bg-amber-600/20", from: "from-amber-500/20", shadow: "shadow-amber-900/50", txt: "text-amber-400", txtSub: "text-amber-300/80" }
                   ];
 
                   const renderSmallButton = (g: any) => {
@@ -8146,11 +9318,7 @@ useEffect(() => {
                         className={`rounded-xl flex flex-row items-center justify-start px-3 h-full min-h-[48px] relative active:scale-95 transition-all outline-none ${g.m === gameMode ? "ring-2 ring-inset ring-white/80 bg-white/10 z-10" : ""} ${isUnlocked || g.comingSoon ? `${g.bg} ${g.shadow}` : "bg-slate-800/40 opacity-70 border border-white/5"}`}
                       >
                         <div className={`absolute inset-0 bg-gradient-to-t ${isUnlocked || g.comingSoon ? g.from : "from-slate-900/50"} rounded-xl`}></div>
-                        {g.m === "stratego" ? (
-                          <div className="absolute top-1.5 right-2 z-20 px-1.5 py-0.5 rounded-md border text-[7px] font-black uppercase tracking-wider bg-amber-500/25 border-amber-400/50 text-amber-300 shadow-sm">
-                            3D NEW
-                          </div>
-                        ) : g.comingSoon ? (
+                        {g.comingSoon ? (
                           <div className="absolute top-1.5 right-2 z-20 px-1.5 py-0.5 rounded-md border text-[7px] font-black uppercase tracking-wider bg-amber-500/25 border-amber-400/40 text-amber-300">
                             SOON
                           </div>
@@ -8161,7 +9329,7 @@ useEffect(() => {
                         <div className="flex flex-col items-start justify-center overflow-hidden w-full relative z-10">
                           <span className={`text-[10px] font-black uppercase tracking-widest text-left truncate w-full ${isUnlocked || g.comingSoon ? g.txt : "text-slate-500"}`}>{g.n}</span>
                           <span className={`text-[7px] font-bold uppercase mt-0.5 whitespace-nowrap overflow-hidden text-clip w-full text-left ${isUnlocked || g.comingSoon ? g.txtSub : "text-slate-600"}`}>
-                            {g.m === "stratego" ? (language === "it" ? "3D Attivo" : "3D Active") : g.comingSoon ? (language === "it" ? "In arrivo" : "Coming soon") : isUnlocked ? g.l : language === "it" ? "50 PUNTI" : "50 POINTS"}
+                            {g.comingSoon ? (language === "it" ? "In arrivo" : "Coming soon") : isUnlocked ? g.l : language === "it" ? "50 PUNTI" : "50 POINTS"}
                           </span>
                         </div>
                       </button>
@@ -8169,21 +9337,25 @@ useEffect(() => {
                   };
 
                   const wallGo = allGames.find(g => g.m === "dominio")!;
+                  const pylos = allGames.find(g => g.m === "pylos")!;
                   const baduk = allGames.find(g => g.m === "baduk")!;
+                  const quarto = allGames.find(g => g.m === "quarto")!;
                   const stratego = allGames.find(g => g.m === "stratego")!;
                   const onitama = allGames.find(g => g.m === "onitama")!;
                   const amazons = allGames.find(g => g.m === "amazons")!;
                   const chainTriangle = allGames.find(g => g.m === "chain_triangle")!;
+                  const shobu = allGames.find(g => g.m === "shobu")!;
+                  const hex = allGames.find(g => g.m === "hex")!;
 
-                  // Ordine: Onitama al posto di Amazons, Amazons in fondo a destra
+                  // Baduk/Go sceso di una riga, Hex spostato nella 2ª pagina
                   const otherGames = [
+                    baduk,
                     allGames.find(g => g.m === "corsa")!,
+                    stratego,
                     onitama,
                     allGames.find(g => g.m === "domineering")!,
-                    allGames.find(g => g.m === "hex")!,
                     allGames.find(g => g.m === "pente")!,
                     allGames.find(g => g.m === "orbito")!,
-                    allGames.find(g => g.m === "shobu")!,
                     allGames.find(g => g.m === "yinsh")!,
                     allGames.find(g => g.m === "abalone")!,
                     amazons
@@ -8197,10 +9369,19 @@ useEffect(() => {
                         onScroll={handleHomeCarouselScroll}
                         onTouchStart={handleHomeTouchStart}
                         onTouchEnd={handleHomeTouchEnd}
-                        className="w-full flex-1 flex flex-row overflow-x-auto snap-x snap-mandatory scroll-smooth no-scrollbar select-none min-h-0"
+                        onMouseDown={handleHomeMouseDown}
+                        onDragStart={(e) => e.preventDefault()}
+                        onClickCapture={(e) => {
+                          if (homeMouseDidDrag.current) {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            homeMouseDidDrag.current = false;
+                          }
+                        }}
+                        className="w-full flex-1 flex flex-row overflow-x-auto snap-x snap-mandatory scroll-smooth no-scrollbar select-none min-h-0 cursor-grab active:cursor-grabbing"
                         style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
                       >
-                        {/* Slide 0: Current 13 Games */}
+                        {/* Slide 0: First Page Games */}
                         <div className="w-full shrink-0 snap-start snap-always flex flex-col gap-2 p-1 min-h-0 h-full justify-between">
                           <button
                             onClick={() => {
@@ -8220,41 +9401,33 @@ useEffect(() => {
                           <div className="grid grid-cols-2 gap-2 flex-1 min-h-[68px]">
                             <button
                               onClick={() => {
-                                const isUnlocked = isModeUnlocked("baduk");
-                                if (!isUnlocked) {
-                                  setUnlockModalMode("baduk");
-                                  return;
-                                }
-                                handleGameModeChange(baduk.m as GameMode);
+                                handleGameModeChange(pylos.m as GameMode);
                                 setSetupView("details");
                               }}
-                              className={`rounded-2xl shrink-0 px-2 h-full shadow-xl flex flex-row items-center gap-2 relative active:scale-95 transition-all outline-none ${baduk.m === gameMode ? "ring-2 ring-inset ring-white/80 bg-white/10 z-10" : ""} ${(isModeUnlocked("baduk")) ? `${baduk.bg} ${baduk.shadow}` : "bg-slate-800/40 opacity-70 border border-white/5"}`}
+                              className={`rounded-2xl shrink-0 px-2 h-full shadow-xl flex flex-row items-center gap-2 relative active:scale-95 transition-all outline-none ${pylos.m === gameMode ? "ring-2 ring-inset ring-white/80 bg-white/10 z-10" : ""} ${pylos.bg} ${pylos.shadow}`}
                             >
-                              <div className={`absolute inset-0 bg-gradient-to-t ${(isModeUnlocked("baduk")) ? baduk.from : "from-slate-900/50"} rounded-2xl`}></div>
-                              {!(isModeUnlocked("baduk")) && <div className="absolute top-2 right-2 z-20 text-[10px]">🔒</div>}
-                              <div className={`text-3xl ml-1 relative z-10 ${!(isModeUnlocked("baduk")) ? "grayscale opacity-50" : ""}`}>{baduk.i}</div>
+                              <div className={`absolute inset-0 bg-gradient-to-t ${pylos.from} rounded-2xl`}></div>
+                              <div className="text-3xl ml-1 relative z-10">{pylos.i}</div>
                               <div className="flex flex-col items-start relative z-10 mt-0.5">
-                                <span className={`text-sm font-black uppercase tracking-widest text-left ${(isModeUnlocked("baduk")) ? baduk.txt : "text-slate-500"}`}>{baduk.n}</span>
-                                <span className={`text-[8px] mt-0.5 font-bold uppercase text-left ${(isModeUnlocked("baduk")) ? baduk.txtSub : "text-slate-600"}`}>
-                                  {(isModeUnlocked("baduk")) ? baduk.l : language === "it" ? "50 PUNTI" : "50 POINTS"}
+                                <span className={`text-sm font-black uppercase tracking-widest text-left ${pylos.txt}`}>{pylos.n}</span>
+                                <span className={`text-[8px] mt-0.5 font-bold uppercase text-left ${pylos.txtSub}`}>
+                                  {pylos.l}
                                 </span>
                               </div>
                             </button>
                             <button
                               onClick={() => {
-                                handleOpenStratego();
+                                handleGameModeChange(quarto.m as GameMode);
+                                setSetupView("details");
                               }}
-                              className={`rounded-2xl shrink-0 px-2 h-full shadow-xl flex flex-row items-center gap-2 relative active:scale-95 transition-all outline-none ${stratego.m === gameMode ? "ring-2 ring-inset ring-white/80 bg-white/10 z-10" : ""} ${stratego.bg} ${stratego.shadow}`}
+                              className={`rounded-2xl shrink-0 px-2 h-full shadow-xl flex flex-row items-center gap-2 relative active:scale-95 transition-all outline-none ${quarto.m === gameMode ? "ring-2 ring-inset ring-white/80 bg-white/10 z-10" : ""} ${quarto.bg} ${quarto.shadow}`}
                             >
-                              <div className={`absolute inset-0 bg-gradient-to-t ${stratego.from} rounded-2xl`}></div>
-                              <div className="absolute top-1.5 right-2 z-20 px-1.5 py-0.5 rounded-md border text-[7px] font-black uppercase tracking-wider bg-amber-500/25 border-amber-400/50 text-amber-300 shadow-sm">
-                                3D NEW
-                              </div>
-                              <div className="text-3xl ml-1 relative z-10">{stratego.i}</div>
+                              <div className={`absolute inset-0 bg-gradient-to-t ${quarto.from} rounded-2xl`}></div>
+                              <div className="text-3xl ml-1 relative z-10">{quarto.i}</div>
                               <div className="flex flex-col items-start relative z-10 mt-0.5">
-                                <span className={`text-sm font-black uppercase tracking-widest text-left ${stratego.txt}`}>{stratego.n}</span>
-                                <span className={`text-[8px] mt-0.5 font-bold uppercase text-left ${stratego.txtSub}`}>
-                                  {language === "it" ? "3D Attivo" : "3D Active"}
+                                <span className={`text-sm font-black uppercase tracking-widest text-left ${quarto.txt}`}>{quarto.n}</span>
+                                <span className={`text-[8px] mt-0.5 font-bold uppercase text-left ${quarto.txtSub}`}>
+                                  {quarto.l}
                                 </span>
                               </div>
                             </button>
@@ -8265,7 +9438,7 @@ useEffect(() => {
                           </div>
                         </div>
 
-                        {/* Slide 1: 14th Game - CHAIN TRIANGLE (TRIANGOLI) - Grafica sobria con dimensione Wall Go AI */}
+                        {/* Slide 1: 2nd Page Games - CHAIN TRIANGLE, SHOBU & HEX */}
                         <div className="w-full shrink-0 snap-start snap-always flex flex-col gap-2.5 p-1 min-h-0 h-full justify-between">
                           {/* Top Navigation Row */}
                           <div className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl bg-slate-900/80 border border-white/10 backdrop-blur-md shadow-md shrink-0">
@@ -8284,33 +9457,36 @@ useEffect(() => {
                             </div>
                           </div>
 
-                          {/* Pulsante Chain Triangle con grafica sobria e dimensione identica al pulsante WALL GO AI */}
-                          {(() => {
-                            const isUnlocked = isModeUnlocked("chain_triangle");
-                            return (
-                              <button
-                                onClick={() => {
-                                  if (!isUnlocked) {
-                                    setUnlockModalMode("chain_triangle");
-                                    return;
-                                  }
-                                  handleGameModeChange(chainTriangle.m as GameMode);
-                                  setSetupView("details");
-                                }}
-                                className={`rounded-2xl shrink-0 p-4 flex-[1.2] min-h-[76px] flex flex-row items-center gap-4 relative active:scale-95 transition-all outline-none ${chainTriangle.m === gameMode ? "ring-2 ring-inset ring-white/80 bg-white/10 z-10" : ""} ${isUnlocked ? `${chainTriangle.bg} ${chainTriangle.shadow}` : "bg-slate-800/40 opacity-70 border border-white/5"}`}
-                              >
-                                <div className={`absolute inset-0 bg-gradient-to-t ${isUnlocked ? chainTriangle.from : "from-slate-900/50"} rounded-2xl`}></div>
-                                {!isUnlocked && <div className="absolute top-2.5 right-2.5 z-20 text-[10px]">🔒</div>}
-                                <div className={`text-5xl ml-2 relative z-10 ${!isUnlocked ? "grayscale opacity-50" : ""}`}>{chainTriangle.i}</div>
-                                <div className="flex flex-col items-start relative z-10 pt-1">
-                                  <span className={`text-xl font-black uppercase tracking-widest text-left ${isUnlocked ? chainTriangle.txt : "text-slate-500"}`}>{chainTriangle.n}</span>
-                                  <span className={`text-[10px] mt-1 font-bold uppercase text-left ${isUnlocked ? chainTriangle.txtSub : "text-slate-600"}`}>
-                                    {isUnlocked ? chainTriangle.l : language === "it" ? "50 PUNTI" : "50 POINTS"}
-                                  </span>
-                                </div>
-                              </button>
-                            );
-                          })()}
+                          {/* Pulsanti 2ª Pagina: Chain Triangle, Shobu & Hex */}
+                          <div className="flex flex-col gap-2.5 w-full">
+                            {[chainTriangle, shobu, hex].map((page2Game) => {
+                              const isUnlocked = isModeUnlocked(page2Game.m as GameMode);
+                              return (
+                                <button
+                                  key={page2Game.m}
+                                  onClick={() => {
+                                    if (!isUnlocked) {
+                                      setUnlockModalMode(page2Game.m as GameMode);
+                                      return;
+                                    }
+                                    handleGameModeChange(page2Game.m as GameMode);
+                                    setSetupView("details");
+                                  }}
+                                  className={`rounded-2xl shrink-0 p-4 min-h-[76px] flex flex-row items-center gap-4 relative active:scale-95 transition-all outline-none ${page2Game.m === gameMode ? "ring-2 ring-inset ring-white/80 bg-white/10 z-10" : ""} ${isUnlocked ? `${page2Game.bg} ${page2Game.shadow}` : "bg-slate-800/40 opacity-70 border border-white/5"}`}
+                                >
+                                  <div className={`absolute inset-0 bg-gradient-to-t ${isUnlocked ? page2Game.from : "from-slate-900/50"} rounded-2xl`}></div>
+                                  {!isUnlocked && <div className="absolute top-2.5 right-2.5 z-20 text-[10px]">🔒</div>}
+                                  <div className={`text-5xl ml-2 relative z-10 ${!isUnlocked ? "grayscale opacity-50" : page2Game.m === "hex" ? "text-fuchsia-400" : ""}`}>{page2Game.i}</div>
+                                  <div className="flex flex-col items-start relative z-10 pt-1">
+                                    <span className={`text-xl font-black uppercase tracking-widest text-left ${isUnlocked ? page2Game.txt : "text-slate-500"}`}>{page2Game.n}</span>
+                                    <span className={`text-[10px] mt-1 font-bold uppercase text-left ${isUnlocked ? page2Game.txtSub : "text-slate-600"}`}>
+                                      {isUnlocked ? page2Game.l : language === "it" ? "50 PUNTI" : "50 POINTS"}
+                                    </span>
+                                  </div>
+                                </button>
+                              );
+                            })}
+                          </div>
 
                           {/* Sezione sobria inferiore con helper di ritorno */}
                           <div className="flex-1 flex flex-col items-center justify-center p-4">
@@ -8318,8 +9494,8 @@ useEffect(() => {
                               onClick={() => scrollToHomeSlide(0)}
                               className="text-[11px] font-bold text-slate-400 hover:text-white flex items-center gap-1.5 py-2 px-3 rounded-lg hover:bg-slate-800/50 transition-colors"
                             >
-                              <span>👈</span>
-                              <span>{language === "it" ? "Scorri a sinistra per tornare alla prima pagina" : "Swipe left to return to first page"}</span>
+                              <span>👉</span>
+                              <span>{language === "it" ? "Trascina verso destra per tornare alla prima pagina" : "Swipe right to return to first page"}</span>
                             </button>
                           </div>
                         </div>
@@ -8342,12 +9518,6 @@ useEffect(() => {
                   );
                 })()}
               </div>
-              {comingSoonToast && (
-                <div className="fixed sm:absolute bottom-12 left-1/2 -translate-x-1/2 w-max max-w-[320px] bg-slate-900/95 text-amber-300 text-sm font-black px-6 py-3.5 rounded-2xl shadow-[0_0_30px_rgba(245,158,11,0.6)] border-2 border-amber-500/80 animate-in fade-in slide-in-from-bottom-2 z-50 text-center pointer-events-none flex items-center gap-2.5">
-                  <span className="text-base">⏳</span>
-                  <span>{comingSoonToast}</span>
-                </div>
-              )}
             </>
           ) : (
             <div className="w-full flex-1 flex flex-col relative animate-in slide-in-from-bottom-8 fade-in duration-300">
@@ -8367,6 +9537,10 @@ useEffect(() => {
                       onClick={() => {
                         if (gameMode === "stratego")
                           setIsStrategoRulesOpen(true);
+                        else if (gameMode === "quarto")
+                          setIsQuartoRulesOpen(true);
+                        else if (gameMode === "pylos")
+                          setIsPylosRulesOpen(true);
                         else if (gameMode === "orbito") setIsOrbitoRulesOpen(true);
                         else if (gameMode === "pente")
                           setIsPenteRulesOpen(true);
@@ -8408,69 +9582,247 @@ useEffect(() => {
                 {/* Title and Icon Area */}
                 <div className="flex flex-col items-center justify-center relative w-full mb-1 sm:mb-2 z-0">
                   <span
-                    className={`text-2xl sm:text-3xl font-black italic truncate w-full text-center px-4 tracking-tight drop-shadow-md mb-2 sm:mb-4 ${gameMode === "stratego" ? "text-amber-400" : gameMode === "corsa" ? "text-orange-400" : gameMode === "amazons" ? "text-purple-400" : gameMode === "domineering" ? "text-rose-400" : gameMode === "abalone" ? "text-slate-200" : gameMode === "hex" ? "text-fuchsia-400" : gameMode === "orbito" ? "text-pink-400" : gameMode === "pente" ? "text-teal-400" : gameMode === "chain_triangle" ? "text-yellow-400" : gameMode === "shobu" ? "text-cyan-400" : gameMode === "yinsh" ? "text-emerald-400" : gameMode === "onitama" ? "text-red-400" : "text-blue-400"}`}
+                    className={`text-2xl sm:text-3xl font-black italic truncate w-full text-center px-4 tracking-tight drop-shadow-md mb-2 sm:mb-4 ${gameMode === "stratego" ? "text-amber-400" : gameMode === "quarto" ? "text-indigo-400" : gameMode === "pylos" ? "text-sky-400" : gameMode === "corsa" ? "text-orange-400" : gameMode === "amazons" ? "text-purple-400" : gameMode === "domineering" ? "text-rose-400" : gameMode === "abalone" ? "text-slate-200" : gameMode === "hex" ? "text-fuchsia-400" : gameMode === "orbito" ? "text-pink-400" : gameMode === "pente" ? "text-teal-400" : gameMode === "chain_triangle" ? "text-yellow-400" : gameMode === "shobu" ? "text-cyan-400" : gameMode === "yinsh" ? "text-emerald-400" : gameMode === "onitama" ? "text-red-400" : "text-blue-400"}`}
                   >
                     {gameMode === "stratego"
                       ? "STRATEGO"
-                      : gameMode === "corsa"
-                      ? "QUORIDOR"
-                      : gameMode === "amazons"
-                        ? "AMAZONS"
-                        : gameMode === "domineering"
-                          ? "DOMINEERING"
-                          : gameMode === "abalone"
-                            ? "ABALONE"
-                            : gameMode === "hex"
-                              ? "HEX"
-                              : gameMode === "orbito"
-                                ? "ORBITO"
-                                : gameMode === "pente"
-                                  ? "PENTE"
-                                  : gameMode === "chain_triangle"
-                                    ? "CHAIN TRIANGLE"
-                                    : gameMode === "shobu"
-                                      ? "SHOBU"
-                                      : gameMode === "yinsh"
-                                        ? "YINSH"
-                                        : gameMode === "onitama"
-                                          ? "ONITAMA"
-                                          : gameMode === "baduk"
-                                            ? "BADUK / GO"
-                                            : "WALL GO AI"}
+                      : gameMode === "quarto"
+                        ? "QUARTO"
+                        : gameMode === "pylos"
+                          ? "PYLOS"
+                          : gameMode === "corsa"
+                            ? "QUORIDOR"
+                            : gameMode === "amazons"
+                              ? "AMAZONS"
+                              : gameMode === "domineering"
+                                ? "DOMINEERING"
+                                : gameMode === "abalone"
+                                  ? "ABALONE"
+                                  : gameMode === "hex"
+                                    ? "HEX"
+                                    : gameMode === "orbito"
+                                      ? "ORBITO"
+                                      : gameMode === "pente"
+                                        ? "PENTE"
+                                        : gameMode === "chain_triangle"
+                                          ? "CHAIN TRIANGLE"
+                                          : gameMode === "shobu"
+                                            ? "SHOBU"
+                                            : gameMode === "yinsh"
+                                              ? "YINSH"
+                                              : gameMode === "onitama"
+                                                ? "ONITAMA"
+                                                : gameMode === "baduk"
+                                                  ? "BADUK / GO"
+                                                  : "WALL GO AI"}
                   </span>
 
                   <div className="flex justify-center shrink-0">
                     <div
-                      className={`w-14 h-14 sm:w-20 sm:h-20 rounded-2xl sm:rounded-[1.5rem] border-2 sm:border-[3px] flex items-center justify-center text-4xl sm:text-5xl shadow-2xl relative overflow-hidden ${gameMode === "stratego" ? "bg-amber-600/20 border-amber-500/80 text-amber-400 shadow-[0_0_25px_rgba(245,158,11,0.3)]" : gameMode === "corsa" ? "bg-orange-600/20 border-orange-500/80 text-orange-400 shadow-[0_0_25px_rgba(249,115,22,0.3)]" : gameMode === "amazons" ? "bg-purple-600/20 border-purple-500/80 text-purple-400 shadow-[0_0_25px_rgba(168,85,247,0.3)]" : gameMode === "domineering" ? "bg-rose-600/20 border-rose-500/80 text-rose-400 shadow-[0_0_25px_rgba(244,63,94,0.3)]" : gameMode === "abalone" ? "bg-slate-700/80 border-slate-400/80 text-slate-200 shadow-[0_0_25px_rgba(148,163,184,0.3)]" : gameMode === "hex" ? "bg-fuchsia-600/20 border-fuchsia-500/80 text-fuchsia-400 shadow-[0_0_25px_rgba(217,70,239,0.3)]" : gameMode === "orbito" ? "bg-pink-600/20 border-pink-500/80 text-pink-400 shadow-[0_0_25px_rgba(236,72,153,0.3)]" : gameMode === "pente" ? "bg-teal-900/30 border-teal-500/80 text-teal-400 shadow-[0_0_25px_rgba(20,184,166,0.3)]" : gameMode === "chain_triangle" ? "bg-yellow-600/20 border-yellow-500/80 text-yellow-400 shadow-[0_0_25px_rgba(250,204,21,0.3)]" : gameMode === "shobu" ? "bg-cyan-600/20 border-cyan-500/80 text-cyan-400 shadow-[0_0_25px_rgba(6,182,212,0.3)]" : gameMode === "yinsh" ? "bg-emerald-600/20 border-emerald-500/80 text-emerald-400 shadow-[0_0_25px_rgba(16,185,129,0.3)]" : gameMode === "onitama" ? "bg-red-900/30 border-red-500/80 text-red-400 shadow-[0_0_25px_rgba(239,68,68,0.3)]" : "bg-blue-600/10 border-blue-500/60 shadow-[0_0_25px_rgba(59,130,246,0.3)]"}`}
+                      className={`w-14 h-14 sm:w-20 sm:h-20 rounded-2xl sm:rounded-[1.5rem] border-2 sm:border-[3px] flex items-center justify-center text-4xl sm:text-5xl shadow-2xl relative overflow-hidden ${gameMode === "stratego" ? "bg-amber-600/20 border-amber-500/80 text-amber-400 shadow-[0_0_25px_rgba(245,158,11,0.3)]" : gameMode === "quarto" ? "bg-indigo-600/20 border-indigo-500/80 text-indigo-400 shadow-[0_0_25px_rgba(99,102,241,0.3)]" : gameMode === "pylos" ? "bg-sky-600/20 border-sky-500/80 text-sky-400 shadow-[0_0_25px_rgba(14,165,233,0.3)]" : gameMode === "baduk" ? "bg-amber-600/20 border-amber-500/80 text-amber-300 shadow-[0_0_25px_rgba(245,158,11,0.3)]" : gameMode === "corsa" ? "bg-orange-600/20 border-orange-500/80 text-orange-400 shadow-[0_0_25px_rgba(249,115,22,0.3)]" : gameMode === "amazons" ? "bg-purple-600/20 border-purple-500/80 text-purple-400 shadow-[0_0_25px_rgba(168,85,247,0.3)]" : gameMode === "domineering" ? "bg-rose-600/20 border-rose-500/80 text-rose-400 shadow-[0_0_25px_rgba(244,63,94,0.3)]" : gameMode === "abalone" ? "bg-slate-700/80 border-slate-400/80 text-slate-200 shadow-[0_0_25px_rgba(148,163,184,0.3)]" : gameMode === "hex" ? "bg-fuchsia-600/20 border-fuchsia-500/80 text-fuchsia-400 shadow-[0_0_25px_rgba(217,70,239,0.3)]" : gameMode === "orbito" ? "bg-pink-600/20 border-pink-500/80 text-pink-400 shadow-[0_0_25px_rgba(236,72,153,0.3)]" : gameMode === "pente" ? "bg-teal-900/30 border-teal-500/80 text-teal-400 shadow-[0_0_25px_rgba(20,184,166,0.3)]" : gameMode === "chain_triangle" ? "bg-yellow-600/20 border-yellow-500/80 text-yellow-400 shadow-[0_0_25px_rgba(250,204,21,0.3)]" : gameMode === "shobu" ? "bg-cyan-600/20 border-cyan-500/80 text-cyan-400 shadow-[0_0_25px_rgba(6,182,212,0.3)]" : gameMode === "yinsh" ? "bg-emerald-600/20 border-emerald-500/80 text-emerald-400 shadow-[0_0_25px_rgba(16,185,129,0.3)]" : gameMode === "onitama" ? "bg-red-900/30 border-red-500/80 text-red-400 shadow-[0_0_25px_rgba(239,68,68,0.3)]" : "bg-blue-600/10 border-blue-500/60 shadow-[0_0_25px_rgba(59,130,246,0.3)]"}`}
                     >
                       {/* Inner glow */}
                       <div
-                        className={`absolute inset-0 bg-gradient-to-tr opacity-30 ${gameMode === "stratego" ? "from-amber-500 to-transparent" : gameMode === "corsa" ? "from-orange-500 to-transparent" : gameMode === "amazons" ? "from-purple-500 to-transparent" : gameMode === "domineering" ? "from-rose-500 to-transparent" : gameMode === "abalone" ? "from-slate-400 to-transparent" : gameMode === "hex" ? "from-fuchsia-500 to-transparent" : gameMode === "orbito" ? "from-pink-500 to-transparent" : gameMode === "pente" ? "from-teal-500 to-transparent" : gameMode === "chain_triangle" ? "from-yellow-500 to-transparent" : gameMode === "shobu" ? "from-cyan-500 to-transparent" : gameMode === "yinsh" ? "from-emerald-500 to-transparent" : gameMode === "onitama" ? "from-red-500 to-transparent" : "from-blue-500 to-transparent"}`}
+                        className={`absolute inset-0 bg-gradient-to-tr opacity-30 ${gameMode === "stratego" ? "from-amber-500 to-transparent" : gameMode === "quarto" ? "from-indigo-500 to-transparent" : gameMode === "pylos" ? "from-sky-500 to-transparent" : gameMode === "baduk" ? "from-amber-500 to-transparent" : gameMode === "corsa" ? "from-orange-500 to-transparent" : gameMode === "amazons" ? "from-purple-500 to-transparent" : gameMode === "domineering" ? "from-rose-500 to-transparent" : gameMode === "abalone" ? "from-slate-400 to-transparent" : gameMode === "hex" ? "from-fuchsia-500 to-transparent" : gameMode === "orbito" ? "from-pink-500 to-transparent" : gameMode === "pente" ? "from-teal-500 to-transparent" : gameMode === "chain_triangle" ? "from-yellow-500 to-transparent" : gameMode === "shobu" ? "from-cyan-500 to-transparent" : gameMode === "yinsh" ? "from-emerald-500 to-transparent" : gameMode === "onitama" ? "from-red-500 to-transparent" : "from-blue-500 to-transparent"}`}
                       ></div>
 
                       <div className="relative z-10 flex items-center justify-center">
                         {gameMode === "stratego" ? (
-                          "🚩"
+                          <span className="anim-icon-stratego">🚩</span>
+                        ) : gameMode === "pylos" ? (
+                          <svg
+                            viewBox="0 0 80 80"
+                            className="w-11 h-11 sm:w-14 sm:h-14 drop-shadow-[0_6px_12px_rgba(0,0,0,0.65)] overflow-visible"
+                            fill="none"
+                            xmlns="http://www.w3.org/2000/svg"
+                          >
+                            <defs>
+                              <radialGradient id="pylosDetailLight" cx="35%" cy="30%" r="70%">
+                                <stop offset="0%" stopColor="#fdf6e7" />
+                                <stop offset="55%" stopColor="#d3b682" />
+                                <stop offset="100%" stopColor="#694d22" />
+                              </radialGradient>
+                              <radialGradient id="pylosDetailDark" cx="35%" cy="30%" r="70%">
+                                <stop offset="0%" stopColor="#7d6255" />
+                                <stop offset="52%" stopColor="#28150f" />
+                                <stop offset="100%" stopColor="#070201" />
+                              </radialGradient>
+                            </defs>
+                            <polygon points="8,56 40,70 40,75 8,61" fill="#452315" />
+                            <polygon points="72,56 40,70 40,75 72,61" fill="#291209" />
+                            <polygon points="40,42 72,56 40,70 8,56" fill="#4e281a" stroke="#784630" strokeWidth="1.2" />
+                            <circle cx="26" cy="52" r="7.5" fill="url(#pylosDetailDark)" stroke="#593b2e" strokeWidth="0.6" />
+                            <circle cx="40" cy="46" r="7.5" fill="url(#pylosDetailLight)" stroke="#b89762" strokeWidth="0.6" />
+                            <circle cx="54" cy="52" r="7.5" fill="url(#pylosDetailDark)" stroke="#593b2e" strokeWidth="0.6" />
+                            <circle cx="40" cy="58" r="7.8" fill="url(#pylosDetailLight)" stroke="#b89762" strokeWidth="0.6" />
+                            <circle cx="33" cy="43" r="7.5" fill="url(#pylosDetailLight)" stroke="#b89762" strokeWidth="0.6" />
+                            <circle cx="47" cy="43" r="7.5" fill="url(#pylosDetailDark)" stroke="#593b2e" strokeWidth="0.6" />
+                            <circle cx="40" cy="48" r="7.8" fill="url(#pylosDetailDark)" stroke="#593b2e" strokeWidth="0.6" />
+                            <g>
+                              <animateTransform attributeName="transform" type="translate" values="0,0; 0,-4.5; 0,0" dur="2.4s" repeatCount="indefinite" />
+                              <circle cx="40" cy="34" r="8.2" fill="url(#pylosDetailLight)" stroke="#fef08a" strokeWidth="1" />
+                              <ellipse cx="37.5" cy="31.5" rx="2.8" ry="1.6" fill="#ffffff" opacity="0.75" />
+                            </g>
+                          </svg>
+                        ) : gameMode === "quarto" ? (
+                          <svg
+                            viewBox="0 0 80 80"
+                            className="w-11 h-11 sm:w-14 sm:h-14 drop-shadow-[0_6px_12px_rgba(0,0,0,0.65)] overflow-visible"
+                            fill="none"
+                            xmlns="http://www.w3.org/2000/svg"
+                          >
+                            {/* 3D Mahogany Board Base */}
+                            <polygon points="8,54 40,68 40,73 8,59" fill="#431a0d" />
+                            <polygon points="72,54 40,68 40,73 72,59" fill="#2d1007" />
+                            <polygon
+                              points="40,39 72,54 40,68 8,54"
+                              fill="#7c331a"
+                              stroke="#9a4224"
+                              strokeWidth="1.2"
+                            />
+                            {/* Glowing Alignment Pulse on Board */}
+                            <ellipse cx="40" cy="53.5" rx="18" ry="8" fill="none" stroke="#fbbf24" strokeWidth="1.3">
+                              <animate attributeName="rx" values="10;22;10" dur="3s" repeatCount="indefinite" />
+                              <animate attributeName="ry" values="4.5;10;4.5" dur="3s" repeatCount="indefinite" />
+                              <animate attributeName="opacity" values="0.7;0.1;0.7" dur="3s" repeatCount="indefinite" />
+                            </ellipse>
+                            {/* Animated 3D Quarto Pieces on Board */}
+                            <g>
+                              <animateTransform attributeName="transform" type="translate" values="0,0; 0,-3.5; 0,0" dur="2.4s" begin="0s" repeatCount="indefinite" />
+                              <Quarto3DPiece pieceId={9} cx={27} cy={52} scale={0.42} />
+                            </g>
+                            <g>
+                              <animateTransform attributeName="transform" type="translate" values="0,0; 0,-4; 0,0" dur="2.4s" begin="0.6s" repeatCount="indefinite" />
+                              <Quarto3DPiece pieceId={2} cx={41} cy={46} scale={0.42} />
+                            </g>
+                            <g>
+                              <animateTransform attributeName="transform" type="translate" values="0,0; 0,-3.5; 0,0" dur="2.4s" begin="1.2s" repeatCount="indefinite" />
+                              <Quarto3DPiece pieceId={12} cx={52} cy={54} scale={0.42} />
+                            </g>
+                            <g>
+                              <animateTransform attributeName="transform" type="translate" values="0,0; 0,-3.5; 0,0" dur="2.4s" begin="1.8s" repeatCount="indefinite" />
+                              <Quarto3DPiece pieceId={1} cx={38} cy={59} scale={0.42} />
+                            </g>
+                          </svg>
+                        ) : gameMode === "baduk" ? (
+                          <svg
+                            viewBox="0 0 80 80"
+                            className="w-11 h-11 sm:w-14 sm:h-14 drop-shadow-[0_6px_12px_rgba(0,0,0,0.65)] overflow-visible"
+                            fill="none"
+                            xmlns="http://www.w3.org/2000/svg"
+                          >
+                            <defs>
+                              <radialGradient id="badukDetailBlack" cx="32%" cy="28%" r="68%">
+                                <stop offset="0%" stopColor="#64748b" />
+                                <stop offset="38%" stopColor="#1e293b" />
+                                <stop offset="100%" stopColor="#020617" />
+                              </radialGradient>
+                              <radialGradient id="badukDetailWhite" cx="32%" cy="28%" r="68%">
+                                <stop offset="0%" stopColor="#ffffff" />
+                                <stop offset="65%" stopColor="#e2e8f0" />
+                                <stop offset="100%" stopColor="#94a3b8" />
+                              </radialGradient>
+                              <linearGradient id="badukDetailBoard" x1="0%" y1="0%" x2="100%" y2="100%">
+                                <stop offset="0%" stopColor="#f59e0b" />
+                                <stop offset="55%" stopColor="#d97706" />
+                                <stop offset="100%" stopColor="#92400e" />
+                              </linearGradient>
+                            </defs>
+                            <polygon points="8,49 40,65 40,71 8,55" fill="#78350f" />
+                            <polygon points="72,49 40,65 40,71 72,55" fill="#451a03" />
+                            <polygon
+                              points="40,33 72,49 40,65 8,49"
+                              fill="url(#badukDetailBoard)"
+                              stroke="#fcd34d"
+                              strokeWidth="1"
+                            />
+                            <line x1="24" y1="41" x2="56" y2="57" stroke="#451a03" strokeWidth="1.1" opacity="0.7" />
+                            <line x1="32" y1="37" x2="64" y2="53" stroke="#451a03" strokeWidth="1.1" opacity="0.6" />
+                            <line x1="16" y1="45" x2="48" y2="61" stroke="#451a03" strokeWidth="1.1" opacity="0.6" />
+                            <line x1="56" y1="41" x2="24" y2="57" stroke="#451a03" strokeWidth="1.1" opacity="0.7" />
+                            <line x1="48" y1="37" x2="16" y2="53" stroke="#451a03" strokeWidth="1.1" opacity="0.6" />
+                            <line x1="64" y1="45" x2="32" y2="61" stroke="#451a03" strokeWidth="1.1" opacity="0.6" />
+                            <circle cx="40" cy="49" r="2" fill="#451a03" />
+                            <ellipse cx="40" cy="49" rx="6" ry="3" stroke="#38bdf8" strokeWidth="1.4" fill="none">
+                              <animate attributeName="rx" values="4;20;4" dur="2.8s" repeatCount="indefinite" />
+                              <animate attributeName="ry" values="2;10;2" dur="2.8s" repeatCount="indefinite" />
+                              <animate attributeName="opacity" values="0.85;0;0.85" dur="2.8s" repeatCount="indefinite" />
+                            </ellipse>
+                            <g transform="translate(40, 38)">
+                              <ellipse
+                                cx="0"
+                                cy="0"
+                                rx="25"
+                                ry="12"
+                                stroke="#fbbf24"
+                                strokeWidth="1.4"
+                                strokeDasharray="18 14"
+                                opacity="0.75"
+                              >
+                                <animateTransform
+                                  attributeName="transform"
+                                  type="rotate"
+                                  from="0"
+                                  to="360"
+                                  dur="7s"
+                                  repeatCount="indefinite"
+                                />
+                              </ellipse>
+                            </g>
+                            <g>
+                              <animateTransform
+                                attributeName="transform"
+                                type="translate"
+                                values="0,0; 2,-3.5; 0,0; -1.5,1.5; 0,0"
+                                dur="3.2s"
+                                repeatCount="indefinite"
+                              />
+                              <ellipse cx="28" cy="46.5" rx="11.5" ry="7.2" fill="rgba(0,0,0,0.45)" />
+                              <ellipse cx="28" cy="43.5" rx="11.5" ry="8" fill="url(#badukDetailBlack)" stroke="#475569" strokeWidth="0.8" />
+                              <ellipse cx="24.5" cy="40.5" rx="4" ry="2.1" fill="#ffffff" opacity="0.35" />
+                            </g>
+                            <g>
+                              <animateTransform
+                                attributeName="transform"
+                                type="translate"
+                                values="0,0; -2,-4; 0,0; 1.5,1.5; 0,0"
+                                dur="3.2s"
+                                begin="1.6s"
+                                repeatCount="indefinite"
+                              />
+                              <ellipse cx="51" cy="51.5" rx="11.5" ry="7.2" fill="rgba(0,0,0,0.4)" />
+                              <ellipse cx="51" cy="48.5" rx="11.5" ry="8" fill="url(#badukDetailWhite)" stroke="#cbd5e1" strokeWidth="0.8" />
+                              <ellipse cx="47.5" cy="45.5" rx="4.2" ry="2.2" fill="#ffffff" opacity="0.85" />
+                            </g>
+                            <circle cx="40" cy="24" r="3" fill="#38bdf8">
+                              <animate attributeName="cy" values="22;28;22" dur="2.2s" repeatCount="indefinite" />
+                              <animate attributeName="opacity" values="0.9;0.35;0.9" dur="2.2s" repeatCount="indefinite" />
+                            </circle>
+                          </svg>
                         ) : gameMode === "corsa" ? (
-                          "🏁"
+                          <span className="anim-icon-corsa">🏁</span>
                         ) : gameMode === "amazons" ? (
-                          "🏹"
+                          <span className="anim-icon-amazons">🏹</span>
                         ) : gameMode === "domineering" ? (
-                          "⚔️"
+                          <span className="anim-icon-domineering">⚔️</span>
                         ) : gameMode === "abalone" ? (
-                          "🎱"
+                          <span className="anim-icon-abalone">🎱</span>
                         ) : gameMode === "hex" ? (
-                          "⬡"
+                          <span className="anim-icon-hex">⬡</span>
                         ) : gameMode === "orbito" ? (
-                          "🪐"
+                          <span className="anim-icon-orbito">🪐</span>
                         ) : gameMode === "pente" ? (
-                          "⭐"
+                          <span className="anim-icon-pente">⭐</span>
                         ) : gameMode === "chain_triangle" ? (
-                          "🔺"
+                          <span className="anim-icon-chain">🔺</span>
                         ) : gameMode === "shobu" ? (
-                          "🌊"
+                          <span className="anim-icon-shobu">🌊</span>
+                        ) : gameMode === "yinsh" ? (
+                          <span className="anim-icon-yinsh">💍</span>
+                        ) : gameMode === "onitama" ? (
+                          <span className="anim-icon-onitama">🏯</span>
                         ) : gameMode === "dominio" ? (
-                          <div className="scale-[0.85] sm:scale-[1.1] my-auto ml-1 drop-shadow-xl animate-pulse">
+                          <div className="scale-[0.85] sm:scale-[1.1] my-auto ml-1 drop-shadow-xl">
                             <Logo size={46} />
                           </div>
                         ) : (
@@ -8508,6 +9860,8 @@ useEffect(() => {
                           (stats.totalYinshScore || 0) +
                           (stats.totalOnitamaScore || 0) +
                           (stats.totalBadukScore || 0) +
+                          (stats.totalQuartoScore || 0) +
+                          (stats.totalPylosScore || 0) +
                           (stats.totalStrategoScore || 0) - computedSpent
                         ).toFixed(1)
                       );
@@ -8631,7 +9985,7 @@ useEffect(() => {
                   </div>
                 </div>
 
-                {((isStartingPreferenceEnabled && gameMode === "dominio") || gameMode === "baduk") && (
+                {(gameMode !== "dominio" || isStartingPreferenceEnabled) && (
                   <div className="space-y-1.5 relative">
                     <label className="text-[9px] font-black text-slate-500 uppercase px-1 tracking-widest">
                       {(t as any).startingPlayer || "Chi inizia?"}
@@ -8642,7 +9996,12 @@ useEffect(() => {
                       ).map((pref) => (
                         <button
                           key={pref}
-                          onClick={() => setStartingPreference(pref)}
+                          onClick={() => {
+                            setStartingPreference(pref);
+                            try {
+                              localStorage.setItem("wallgo_starting_pref", pref);
+                            } catch (e) {}
+                          }}
                           className={`flex-1 py-2.5 rounded-xl font-bold capitalize transition-all ${startingPreference === pref ? "bg-purple-600 shadow-lg" : "bg-slate-800"}`}
                         >
                           {pref === "human"
@@ -8653,6 +10012,54 @@ useEffect(() => {
                         </button>
                       ))}
                     </div>
+                  </div>
+                )}
+                {gameMode === "pylos" && (
+                  <div className="space-y-1.5 relative pt-1">
+                    <label className="text-[9px] font-black text-sky-400 uppercase px-1 tracking-widest flex items-center gap-1.5">
+                      <span>📏</span>
+                      <span>
+                        {language === "it"
+                          ? "Variante Linea (4 Base / 3 Livello 2)"
+                          : "Line Variant (4 Base / 3 Level 2)"}
+                      </span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const next = !pylosLineVariant;
+                        setPylosLineVariant(next);
+                        try {
+                          localStorage.setItem("wallgo_pylos_line_variant", String(next));
+                        } catch (e) {}
+                      }}
+                      className={`w-full px-3 py-2.5 rounded-xl border transition-all active:scale-[0.99] flex items-center justify-between gap-2 text-left ${
+                        pylosLineVariant
+                          ? "bg-sky-600/25 border-sky-400/70 text-sky-100 shadow-[0_0_15px_rgba(14,165,233,0.22)]"
+                          : "bg-slate-800/80 border-white/10 text-slate-300 hover:bg-slate-800"
+                      }`}
+                    >
+                      <span className="text-[11px] font-semibold leading-snug">
+                        {language === "it"
+                          ? "Recupera 1-2 sfere anche con fila di 4 sulla base (4×4) o 3 sul 2° livello (3×3)"
+                          : "Also recover 1-2 spheres with a row of 4 on base (4×4) or 3 on level 2 (3×3)"}
+                      </span>
+                      <span
+                        className={`shrink-0 px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider ${
+                          pylosLineVariant
+                            ? "bg-emerald-500 text-slate-950"
+                            : "bg-slate-700 text-slate-300"
+                        }`}
+                      >
+                        {pylosLineVariant
+                          ? language === "it"
+                            ? "ATTIVA"
+                            : "ON"
+                          : language === "it"
+                            ? "OFF"
+                            : "OFF"}
+                      </span>
+                    </button>
                   </div>
                 )}
                 </>
@@ -8718,18 +10125,12 @@ useEffect(() => {
                     }
 
                     let starterIndex = 0;
-                    if (isAmazons || gameMode === "hex") {
-                      starterIndex = 1;
-                    } else if (gameMode === "pente") {
-                      if (difficulty === "normale" || difficulty === "difficile") {
-                        starterIndex = 0;
-                      } else {
+                    if (gameMode !== "dominio" || isStartingPreferenceEnabled) {
+                      if (startingPreference === "ai") {
                         starterIndex = 1;
+                      } else if (startingPreference === "random") {
+                        starterIndex = Math.floor(Math.random() * playerCount);
                       }
-                    } else if (!isCorsa && startingPreference === "ai") {
-                      starterIndex = 1;
-                    } else if (!isCorsa && startingPreference === "random") {
-                      starterIndex = Math.floor(Math.random() * playerCount);
                     }
 
                     const startingPositions: Record<number, Point[]> = {};
@@ -9010,6 +10411,8 @@ useEffect(() => {
                         gameMode !== "pente" &&
                         gameMode !== "domineering" &&
                         gameMode !== "chain_triangle" &&
+                        gameMode !== "quarto" &&
+                        gameMode !== "pylos" &&
                         playerCount > 2,
                       isTrapped: false,
                       wallsLeft: isCorsa
@@ -9035,10 +10438,14 @@ useEffect(() => {
                         gameMode === "shobu" ||
                         gameMode === "chain_triangle" ||
                         gameMode === "yinsh" ||
-                        gameMode === "onitama"
+                        gameMode === "onitama" ||
+                        gameMode === "quarto" ||
+                        gameMode === "pylos"
                           ? "moving"
                           : "setup",
                       yinshState: gameMode === "yinsh" ? createInitialYinshState() : undefined,
+                      quartoState: gameMode === "quarto" ? createInitialQuartoState() : undefined,
+                      pylosState: gameMode === "pylos" ? createInitialPylosState(pylosLineVariant) : undefined,
                       onitamaState: gameMode === "onitama" ? createInitialOnitamaState(starterIndex + 1) : undefined,
                       chainTriangleState: gameMode === "chain_triangle" ? {
                         rubberBands: [],
@@ -9070,9 +10477,15 @@ useEffect(() => {
                                 ? "orbito"
                                 : gameMode === "pente"
                                   ? "pente"
+                                  : gameMode === "quarto"
+                                    ? "quarto"
+                                    : gameMode === "pylos"
+                                      ? "pylos"
                                   : gameMode === "shobu"
                                     ? boardTheme.startsWith("shobu") ? boardTheme : "shobu"
-                                    : boardTheme,
+                                    : gameMode === "dominio"
+                                      ? sanitizeDominioTheme(boardTheme)
+                                      : boardTheme,
                       lastPlacedPiece: null,
                       lastMoveByPlayer: {},
                       turnCount: 0,
@@ -9090,21 +10503,30 @@ useEffect(() => {
             </div>
           )}
 
+          {comingSoonToast && (
+            <div className="fixed sm:absolute bottom-12 left-1/2 -translate-x-1/2 w-max max-w-[320px] bg-slate-900/95 text-amber-300 text-sm font-black px-6 py-3.5 rounded-2xl shadow-[0_0_30px_rgba(245,158,11,0.6)] border-2 border-amber-500/80 animate-in fade-in slide-in-from-bottom-2 z-50 text-center pointer-events-none flex items-center gap-2.5">
+              <span className="text-base">⏳</span>
+              <span>{comingSoonToast}</span>
+            </div>
+          )}
+
           {unlockModalMode && (() => {
             const infoMap: Record<string, { i: any; n: string }> = {
               'dominio': { i: <Logo size={42} />, n: "Wall Go AI" },
-              'corsa': { i: "🏁", n: "Quoridor" },
-              'amazons': { i: "🏹", n: "Amazons" },
-              'domineering': { i: "⚔️", n: "Domineering" },
-              'abalone': { i: "🎱", n: "Abalone" },
-              'hex': { i: "⬡", n: "Hex" },
-              'orbito': { i: "🪐", n: "Orbito" },
-              'pente': { i: "⭐", n: "Pente" },
-              'chain_triangle': { i: "🔺", n: "Chain Triangle" },
-              'shobu': { i: "🪨", n: "Shobu" },
-              'yinsh': { i: "💍", n: "Yinsh" },
-              'onitama': { i: "🏯", n: "Onitama" },
-              'baduk': { i: "⚫", n: "Baduk / Go" }
+              'corsa': { i: <span className="anim-icon-corsa">🏁</span>, n: "Quoridor" },
+              'amazons': { i: <span className="anim-icon-amazons">🏹</span>, n: "Amazons" },
+              'domineering': { i: <span className="anim-icon-domineering">⚔️</span>, n: "Domineering" },
+              'abalone': { i: <span className="anim-icon-abalone">🎱</span>, n: "Abalone" },
+              'hex': { i: <span className="anim-icon-hex">⬡</span>, n: "Hex" },
+              'orbito': { i: <span className="anim-icon-orbito">🪐</span>, n: "Orbito" },
+              'pente': { i: <span className="anim-icon-pente">⭐</span>, n: "Pente" },
+              'chain_triangle': { i: <span className="anim-icon-chain">🔺</span>, n: "Chain Triangle" },
+              'shobu': { i: <span className="anim-icon-shobu">🪨</span>, n: "Shobu" },
+              'yinsh': { i: <span className="anim-icon-yinsh">💍</span>, n: "Yinsh" },
+              'onitama': { i: <span className="anim-icon-onitama">🏯</span>, n: "Onitama" },
+              'baduk': { i: <span className="anim-icon-abalone">⚫</span>, n: "Baduk / Go" },
+              'quarto': { i: <span className="anim-icon-pente">🧩</span>, n: "Quarto" },
+              'pylos': { i: <span className="anim-icon-chain">🔺</span>, n: "Pylos" }
             };
             const info = infoMap[unlockModalMode] || { i: "❓", n: "Unknown" };
 
@@ -9126,6 +10548,8 @@ useEffect(() => {
                   (stats.totalYinshScore || 0) +
                   (stats.totalOnitamaScore || 0) +
                   (stats.totalBadukScore || 0) +
+                  (stats.totalQuartoScore || 0) +
+                  (stats.totalPylosScore || 0) +
                   (stats.totalStrategoScore || 0) - pointsSpent
               ).toFixed(1)
             );
@@ -9190,6 +10614,8 @@ useEffect(() => {
                         else if (unlockModalMode === "yinsh") setIsYinshRulesOpen(true);
                         else if (unlockModalMode === "onitama") setIsOnitamaRulesOpen(true);
                         else if (unlockModalMode === "baduk") setIsBadukRulesOpen(true);
+                        else if (unlockModalMode === "quarto") setIsQuartoRulesOpen(true);
+                        else if (unlockModalMode === "pylos") setIsPylosRulesOpen(true);
                         else setIsRulesOpen(true);
                       }}
                       className="w-full py-3 bg-slate-800 rounded-2xl font-black text-sm text-blue-400 border border-blue-500/30 hover:bg-slate-700 transition-colors active:scale-95"
@@ -9246,36 +10672,84 @@ useEffect(() => {
           <header className="flex items-center justify-between px-2 py-0.5 flex-shrink-0">
             <div className="flex items-center gap-3">
               {gameMode === "corsa" ? (
-                <span className="text-2xl">🧱</span>
+                <span className="text-2xl anim-icon-corsa">🏁</span>
               ) : gameMode === "amazons" ? (
-                <span className="text-2xl">🏹</span>
+                <span className="text-2xl anim-icon-amazons">🏹</span>
               ) : gameMode === "domineering" ? (
-                <span className="text-2xl">⚔️</span>
+                <span className="text-2xl anim-icon-domineering">⚔️</span>
               ) : gameMode === "abalone" ? (
-                <span className="text-2xl">🟤</span>
+                <span className="text-2xl anim-icon-abalone">🎱</span>
               ) : gameMode === "hex" ? (
-                <div className="text-[24px] leading-[24px] mr-1 text-purple-400">
+                <div className="text-[24px] leading-[24px] mr-1 text-purple-400 anim-icon-hex">
                   ⬡
                 </div>
               ) : gameMode === "orbito" ? (
-                <span className="text-2xl">🪐</span>
+                <span className="text-2xl anim-icon-orbito">🪐</span>
               ) : gameMode === "pente" ? (
-                <span className="text-2xl">⭐</span>
+                <span className="text-2xl anim-icon-pente">⭐</span>
               ) : gameMode === "chain_triangle" ? (
-                <span className="text-2xl">🔺</span>
+                <span className="text-2xl anim-icon-chain">🔺</span>
               ) : gameMode === "shobu" ? (
-                <span className="text-2xl">🪨</span>
+                <span className="text-2xl anim-icon-shobu">🪨</span>
               ) : gameMode === "yinsh" ? (
-                <span className="text-2xl">💍</span>
+                <span className="text-2xl anim-icon-yinsh">💍</span>
               ) : gameMode === "onitama" ? (
-                <span className="text-2xl">🏯</span>
+                <span className="text-2xl anim-icon-onitama">🏯</span>
               ) : gameMode === "baduk" ? (
-                <span className="text-2xl">⚫</span>
+                <svg
+                  viewBox="0 0 80 80"
+                  className="w-7 h-7 drop-shadow-[0_4px_8px_rgba(0,0,0,0.65)] overflow-visible"
+                  fill="none"
+                  xmlns="http://www.w3.org/2000/svg"
+                >
+                  <polygon points="8,49 40,65 40,71 8,55" fill="#78350f" />
+                  <polygon points="72,49 40,65 40,71 72,55" fill="#451a03" />
+                  <polygon points="40,33 72,49 40,65 8,49" fill="#d97706" stroke="#fcd34d" strokeWidth="1.2" />
+                  <g>
+                    <animateTransform attributeName="transform" type="translate" values="0,0; 1.5,-3; 0,0" dur="2.8s" repeatCount="indefinite" />
+                    <ellipse cx="28" cy="43.5" rx="11.5" ry="8" fill="#1e293b" stroke="#64748b" strokeWidth="1" />
+                  </g>
+                  <g>
+                    <animateTransform attributeName="transform" type="translate" values="0,0; -1.5,-3; 0,0" dur="2.8s" begin="1.4s" repeatCount="indefinite" />
+                    <ellipse cx="51" cy="48.5" rx="11.5" ry="8" fill="#f8fafc" stroke="#cbd5e1" strokeWidth="1" />
+                  </g>
+                </svg>
+              ) : gameMode === "quarto" ? (
+                <svg
+                  viewBox="0 0 80 80"
+                  className="w-7 h-7 overflow-visible"
+                  fill="none"
+                  xmlns="http://www.w3.org/2000/svg"
+                >
+                  <polygon points="8,54 40,68 40,73 8,59" fill={quartoBoardStyle === "neon" ? "#1e293b" : "#431a0d"} />
+                  <polygon points="72,54 40,68 40,73 72,59" fill={quartoBoardStyle === "neon" ? "#0f172a" : "#2d1007"} />
+                  <polygon points="40,39 72,54 40,68 8,54" fill={quartoBoardStyle === "neon" ? "#1e293b" : "#7c331a"} stroke={quartoBoardStyle === "neon" ? "#fef08a" : "#9a4224"} strokeWidth="1.2" />
+                  <Quarto3DPiece pieceId={9} cx={27} cy={52} scale={0.42} uidPrefix="qhdr1" boardStyle={quartoBoardStyle} />
+                  <Quarto3DPiece pieceId={2} cx={41} cy={46} scale={0.42} uidPrefix="qhdr2" boardStyle={quartoBoardStyle} />
+                  <Quarto3DPiece pieceId={12} cx={52} cy={54} scale={0.42} uidPrefix="qhdr3" boardStyle={quartoBoardStyle} />
+                  <Quarto3DPiece pieceId={1} cx={38} cy={59} scale={0.42} uidPrefix="qhdr4" boardStyle={quartoBoardStyle} />
+                </svg>
+              ) : gameMode === "pylos" ? (
+                <svg
+                  viewBox="0 0 80 80"
+                  className="w-7 h-7 overflow-visible"
+                  fill="none"
+                  xmlns="http://www.w3.org/2000/svg"
+                >
+                  <polygon points="8,56 40,70 40,75 8,61" fill={pylosBoardStyle === "neon" ? "#1e293b" : "#5c2d16"} />
+                  <polygon points="72,56 40,70 40,75 72,61" fill={pylosBoardStyle === "neon" ? "#0f172a" : "#3b1a0b"} />
+                  <polygon points="40,42 72,56 40,70 8,56" fill={pylosBoardStyle === "neon" ? "#1e293b" : "#73391c"} stroke={pylosBoardStyle === "neon" ? "#fef08a" : "#a35c37"} strokeWidth="1.2" />
+                  <circle cx="28" cy="52" r="7" fill={pylosBoardStyle === "neon" ? "#ef4444" : "#b04811"} stroke={pylosBoardStyle === "neon" ? "#fca5a5" : "#f59352"} strokeWidth="0.6" />
+                  <circle cx="40" cy="46" r="7" fill={pylosBoardStyle === "neon" ? "#3b82f6" : "#dfb97c"} stroke={pylosBoardStyle === "neon" ? "#93c5fd" : "#fff6e0"} strokeWidth="0.6" />
+                  <circle cx="52" cy="52" r="7" fill={pylosBoardStyle === "neon" ? "#ef4444" : "#b04811"} stroke={pylosBoardStyle === "neon" ? "#fca5a5" : "#f59352"} strokeWidth="0.6" />
+                  <circle cx="40" cy="58" r="7" fill={pylosBoardStyle === "neon" ? "#3b82f6" : "#dfb97c"} stroke={pylosBoardStyle === "neon" ? "#93c5fd" : "#fff6e0"} strokeWidth="0.6" />
+                  <circle cx="40" cy="36" r="7.5" fill={pylosBoardStyle === "neon" ? "#60a5fa" : "#f9e5be"} stroke="#fef08a" strokeWidth="1" />
+                </svg>
               ) : (
                 <Logo size={24} />
               )}
               <div>
-                <h2 className={`text-lg font-black italic leading-none ${gameMode === "corsa" ? "text-orange-400" : gameMode === "amazons" ? "text-purple-400" : gameMode === "domineering" ? "text-rose-400" : gameMode === "abalone" ? "text-slate-300" : gameMode === "hex" ? "text-fuchsia-400" : gameMode === "orbito" ? "text-pink-400" : gameMode === "pente" ? "text-teal-400" : gameMode === "chain_triangle" ? "text-yellow-400" : gameMode === "shobu" ? "text-cyan-400" : gameMode === "yinsh" ? "text-emerald-400" : gameMode === "onitama" ? "text-red-400" : gameMode === "baduk" ? "text-zinc-300" : "text-blue-400"}`}>
+                <h2 className={`text-lg font-black italic leading-none ${gameMode === "corsa" ? "text-orange-400" : gameMode === "amazons" ? "text-purple-400" : gameMode === "domineering" ? "text-rose-400" : gameMode === "abalone" ? "text-slate-300" : gameMode === "hex" ? "text-fuchsia-400" : gameMode === "orbito" ? "text-pink-400" : gameMode === "pente" ? "text-teal-400" : gameMode === "chain_triangle" ? "text-yellow-400" : gameMode === "shobu" ? "text-cyan-400" : gameMode === "yinsh" ? "text-emerald-400" : gameMode === "onitama" ? "text-red-400" : gameMode === "baduk" ? "text-zinc-300" : gameMode === "quarto" ? "text-amber-400" : gameMode === "pylos" ? "text-sky-400" : "text-blue-400"}`}>
                   {gameMode === "corsa"
                     ? "QUORIDOR"
                     : gameMode === "amazons"
@@ -9300,7 +10774,11 @@ useEffect(() => {
                                         ? "ONITAMA"
                                         : gameMode === "baduk"
                                           ? "BADUK / GO"
-                                          : "WALL GO AI"}
+                                          : gameMode === "quarto"
+                                            ? "QUARTO"
+                                            : gameMode === "pylos"
+                                              ? "PYLOS"
+                                              : "WALL GO AI"}
                 </h2>
               </div>
             </div>
@@ -9324,6 +10802,8 @@ useEffect(() => {
                     else if (gameMode === "yinsh") setIsYinshRulesOpen(true);
                     else if (gameMode === "onitama") setIsOnitamaRulesOpen(true);
                     else if (gameMode === "baduk") setIsBadukRulesOpen(true);
+                    else if (gameMode === "quarto") setIsQuartoRulesOpen(true);
+                    else if (gameMode === "pylos") setIsPylosRulesOpen(true);
                     else setIsRulesOpen(true);
                   }}
                   className="w-10 h-10 bg-slate-800 rounded-full flex items-center justify-center hover:bg-slate-700 transition-colors border border-white/10"
@@ -9375,7 +10855,7 @@ useEffect(() => {
             </div>
           )}
 
-          {gameMode !== "onitama" && (
+          {gameMode !== "onitama" && gameMode !== "quarto" && gameMode !== "pylos" && (
             <div
               className={`grid gap-2 flex-shrink-0 ${gameState.players.length === 2 ? "grid-cols-2" : gameState.players.length === 3 ? "grid-cols-3" : "grid-cols-4"}`}
             >
@@ -9426,269 +10906,539 @@ useEffect(() => {
             </div>
           )}
 
-          <div className="flex-1 flex flex-col items-center justify-center relative mt-2 md:mt-0 min-h-0 w-full overflow-hidden">
+          <div className={`flex-1 flex flex-col items-center justify-center relative ${gameMode === "quarto" || gameMode === "pylos" ? "mt-0" : "mt-2 md:mt-0"} min-h-0 w-full overflow-hidden`}>
             <div
-              className={`w-full h-full flex items-center justify-center p-1 ${!isMyTurnOnline ? "pointer-events-none select-none opacity-90" : ""}`}
-              style={{ containerType: "size" }}
+              className={`w-full h-full flex items-center justify-center px-0 py-1 ${!isMyTurnOnline ? "pointer-events-none select-none opacity-90" : ""}`}
+              style={gameMode === "quarto" || gameMode === "pylos" ? undefined : { containerType: "size" }}
             >
               {gameMode === "chain_triangle" ? (
                 <ChainTriangleBoard chainState={gameState.chainTriangleState} onPegClick={handleChainTrianglePegClick} />
+              ) : gameMode === "quarto" && gameState.quartoState ? (
+                <QuartoBoard
+                  quartoState={gameState.quartoState}
+                  onSelectPiece={handleQuartoSelectPiece}
+                  onPlacePiece={handleQuartoPlacePiece}
+                  isUserTurn={isUserTurn && !isAIThinking}
+                  isAIThinking={isAIThinking}
+                  currentPlayerName={currentPlayer?.name || ""}
+                  opponentPlayerName={gameState.players[(gameState.currentPlayerIndex + 1) % gameState.players.length]?.name || "AI"}
+                  language={language}
+                  boardStyle={quartoBoardStyle}
+                />
+              ) : gameMode === "pylos" && gameState.pylosState ? (
+                <PylosBoard
+                  pylosState={gameState.pylosState}
+                  currentPlayerId={currentPlayer?.id || 1}
+                  onPlaceSphere={handlePylosPlaceSphere}
+                  onRaiseSphere={handlePylosRaiseSphere}
+                  onRecoverSphere={handlePylosRecoverSphere}
+                  onFinishRecovery={handlePylosFinishRecovery}
+                  isUserTurn={isUserTurn && !isAIThinking}
+                  isAIThinking={isAIThinking}
+                  player1Name={gameState.players[0]?.name || userName || "Player 1"}
+                  player2Name={gameState.players[1]?.name || "AI"}
+                  language={language}
+                  boardStyle={pylosBoardStyle}
+                />
               ) : gameMode === "yinsh" && gameState.yinshState ? (
                 <YinshBoard gameState={gameState.yinshState} onPointClick={handleYinshPointClick} currentPlayerId={currentPlayer.id} />
               ) : gameMode === "onitama" && gameState.onitamaState ? (
                 <OnitamaBoard gameState={gameState} onMove={handleMove} viewerId={currentPlayer.id} theme={gameState.boardTheme} language={language} />
               ) : gameMode === "orbito" ? (
-                <div className="relative w-full max-w-sm aspect-square bg-slate-900 rounded-2xl border-2 border-slate-700 shadow-2xl p-3">
-                  <div className="relative w-full h-full">
-                    {Array.from({ length: 16 }).map((_, i) => {
-                      const r = Math.floor(i / 4);
-                      const c = i % 4;
-                      let direction = "";
-                      if (i === 1 || i === 2 || i === 3 || i === 6)
-                        direction = "left";
-                      else if (i === 0 || i === 4 || i === 8 || i === 5)
-                        direction = "down";
-                      else if (i === 12 || i === 13 || i === 14 || i === 9)
-                        direction = "right";
-                      else if (i === 7 || i === 11 || i === 15 || i === 10)
-                        direction = "up";
+                (() => {
+                  const isOrbito3D = orbitoTiltX > 1 && !gameState.winner && gameState.status !== "ended";
+                  const radZ = (orbitoRotateZ * Math.PI) / 180;
+                  const radX = (orbitoTiltX * Math.PI) / 180;
+                  const cosZ = Math.cos(radZ);
+                  const sinZ = Math.sin(radZ);
+                  const sinX = Math.sin(radX);
+                  const rho = 0.20;
+                  let minProjX = Infinity;
+                  let maxProjX = -Infinity;
+                  for (const [cx, cy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+                    const x1 = cx * cosZ - cy * sinZ;
+                    const y1 = cx * sinZ + cy * cosZ;
+                    const projX = x1 / Math.max(0.5, 1 - rho * y1 * sinX);
+                    if (projX < minProjX) minProjX = projX;
+                    if (projX > maxProjX) maxProjX = projX;
+                  }
+                  const halfSpanX = Math.max(0.5, (maxProjX - minProjX) * 0.5);
+                  const midProjX = (maxProjX + minProjX) * 0.5;
+                  const dynamic3DScale = 0.994 / halfSpanX;
+                  const shiftXPct = -midProjX * dynamic3DScale * 50;
+                  const tiltRad = (orbitoTiltX * Math.PI) / 180;
+                  const invCosTilt = isOrbito3D ? 1 / Math.max(0.75, Math.cos(tiltRad)) : 1;
+                  const sphereLiftPct = isOrbito3D ? Math.min(18, (orbitoTiltX / 38) * 16) : 0;
+                  const tiltFactor = Math.min(1, Math.max(0.76, orbitoTiltX / 32));
+                  const shadowAngleDeg = -13 - orbitoRotateZ;
 
-                      let rotation = 0;
-                      if (direction === "up") rotation = -90;
-                      else if (direction === "down") rotation = 90;
-                      else if (direction === "left") rotation = 180;
-                      else if (direction === "right") rotation = 0;
-
-                      // Trova se c'è una pedina
-                      let piecePlayer: Player | undefined;
-                      gameState.players.forEach((p) => {
-                        if (
-                          p.positions.find((pos) => pos.r === r && pos.c === c)
-                        ) {
-                          piecePlayer = p;
-                        }
-                      });
-
-                      // Se stiamo shiftando un pezzo avversario, le caselle adiacenti libere sono evidenziate
-                      let isPossibleShiftMove = false;
-                      if (
-                        gameState.orbitoPhase === "shift" &&
-                        gameState.orbitoActionState?.playerId &&
-                        gameState.orbitoActionState.pieceIdx !== undefined &&
-                        !piecePlayer
-                      ) {
-                        const oppP = gameState.players.find(
-                          (p) => p.id === gameState.orbitoActionState!.playerId,
-                        );
-                        if (
-                          oppP &&
-                          oppP.positions[gameState.orbitoActionState.pieceIdx]
-                        ) {
-                          const oppPos =
-                            oppP.positions[
-                              gameState.orbitoActionState.pieceIdx
-                            ];
-                          const dr = Math.abs(oppPos.r - r);
-                          const dc = Math.abs(oppPos.c - c);
-                          if (
-                            (dr === 1 && dc === 0) ||
-                            (dr === 0 && dc === 1)
-                          ) {
-                            isPossibleShiftMove = true;
+                  return (
+                    <>
+                      {isOrbito3D && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setOrbitoTiltX(0);
+                            setOrbitoRotateZ(0);
+                          }}
+                          onPointerDown={(e) => e.stopPropagation()}
+                          className="absolute top-2 right-2 z-[260] px-3 py-1.5 rounded-xl bg-slate-900/95 hover:bg-slate-800 border border-amber-400/70 text-amber-300 font-black text-xs uppercase tracking-wider shadow-[0_0_20px_rgba(0,0,0,0.85)] flex items-center gap-1.5 active:scale-95 transition-all cursor-pointer"
+                          title="Torna alla vista 2D"
+                        >
+                          <span>🔄</span>
+                          <span>2D</span>
+                        </button>
+                      )}
+                      <div
+                        onPointerDown={(e) => {
+                          if (!gameState.winner && e.isPrimary) {
+                            orbitoDragRef.current = {
+                              active: true,
+                              lastX: e.clientX,
+                              lastY: e.clientY,
+                              totalDist: 0,
+                              wasDragged: false,
+                            };
                           }
-                        }
-                      }
+                        }}
+                        onPointerUp={() => {
+                          if (orbitoDragRef.current.active) {
+                            orbitoDragRef.current.active = false;
+                            setIsDraggingOrbito3D(false);
+                            setTimeout(() => {
+                              orbitoDragRef.current.wasDragged = false;
+                            }, 50);
+                          }
+                        }}
+                        onPointerCancel={() => {
+                          orbitoDragRef.current.active = false;
+                          orbitoDragRef.current.wasDragged = false;
+                          setIsDraggingOrbito3D(false);
+                        }}
+                        onPointerLeave={(e) => {
+                          if (e.pointerType === "mouse" && orbitoDragRef.current.active) {
+                            orbitoDragRef.current.active = false;
+                            setIsDraggingOrbito3D(false);
+                            setTimeout(() => {
+                              orbitoDragRef.current.wasDragged = false;
+                            }, 50);
+                          }
+                        }}
+                        onPointerMove={(e) => {
+                          if (orbitoDragRef.current.active && !gameState.winner && e.isPrimary) {
+                            const dx = e.clientX - orbitoDragRef.current.lastX;
+                            const dy = e.clientY - orbitoDragRef.current.lastY;
+                            orbitoDragRef.current.lastX = e.clientX;
+                            orbitoDragRef.current.lastY = e.clientY;
+                            orbitoDragRef.current.totalDist += Math.hypot(dx, dy);
 
-                      const handleCellClick = () => {
-                        if (!isUserTurn) return;
-                        if (gameState.orbitoPhase === "shift") {
-                          if (!piecePlayer && isPossibleShiftMove) {
-                            // Move the opponent piece
-                            setGameState((prev) => {
-                              const px = prev.orbitoActionState?.pieceIdx;
-                              const nPlayers = JSON.parse(
-                                JSON.stringify(prev.players || []),
-                              );
-                              const oppPlayer = nPlayers.find(
-                                (p: any) =>
-                                  p.id === prev.orbitoActionState?.playerId,
+                            if (orbitoDragRef.current.totalDist > 6) {
+                              if (!orbitoDragRef.current.wasDragged) {
+                                orbitoDragRef.current.wasDragged = true;
+                                setIsDraggingOrbito3D(true);
+                              }
+                              setOrbitoRotateZ((prev) => prev - dx * 0.48);
+                              setOrbitoTiltX((prev) => {
+                                const baseTilt = prev < 10 ? 34 : prev;
+                                const nextTilt = Math.max(0, Math.min(38, baseTilt - dy * 0.32));
+                                return nextTilt < 5 && dy > 2 ? 0 : nextTilt;
+                              });
+                            }
+                          }
+                        }}
+                        className={`relative w-full aspect-square bg-slate-900 rounded-[1.5rem] border-[2px] ${isOrbito3D ? "border-[#fef08a]" : "border-slate-700"} shadow-[0_0_50px_rgba(0,0,0,0.7)] p-3 select-none touch-none ${isDraggingOrbito3D ? "transition-none cursor-grabbing" : "transition-all duration-300 ease-in-out cursor-grab"}`}
+                        style={{
+                          width: "100%",
+                          height: "100%",
+                          maxWidth: isOrbito3D ? "min(100cqw, 550px)" : "min(100cqw, 100cqh, 550px)",
+                          maxHeight: isOrbito3D ? "min(100cqw, 550px)" : "min(100cqh, 100cqw, 550px)",
+                          aspectRatio: "1 / 1",
+                          ...(isOrbito3D
+                            ? {
+                                transform: `translateX(${shiftXPct.toFixed(2)}%) perspective(950px) scale(${dynamic3DScale.toFixed(3)}) rotateX(${orbitoTiltX.toFixed(1)}deg) rotateZ(${orbitoRotateZ.toFixed(1)}deg)`,
+                                transformOrigin: "center center",
+                                transformStyle: "preserve-3d",
+                              }
+                            : {}),
+                        }}
+                      >
+                        {isOrbito3D && (
+                          <>
+                            <div
+                              className="absolute inset-0 rounded-[1.5rem] pointer-events-none"
+                              style={{
+                                backgroundColor: "#1e293b",
+                                border: "2px solid #ca8a04",
+                                transform: "translateZ(-7px)",
+                                boxShadow: "inset 0 0 18px rgba(0,0,0,0.75)",
+                              }}
+                            />
+                            <div
+                              className="absolute inset-0 rounded-[1.5rem] pointer-events-none"
+                              style={{
+                                backgroundColor: "#0f172a",
+                                border: "2px solid #854d0e",
+                                transform: "translateZ(-14px)",
+                                boxShadow: "0 26px 45px rgba(0,0,0,0.88)",
+                              }}
+                            />
+                          </>
+                        )}
+                        <div
+                          className="relative w-full h-full"
+                          style={{ transformStyle: isOrbito3D ? "preserve-3d" : undefined }}
+                        >
+                          {/* Shared SVG Gradient Definitions for Orbito 3D Sphere Shadows */}
+                          {isOrbito3D && (
+                            <svg className="absolute w-0 h-0 pointer-events-none" aria-hidden="true">
+                              <defs>
+                                <radialGradient id="orbito-sphere-ao" cx="50%" cy="50%" r="50%">
+                                  <stop offset="0%" stopColor="rgba(2, 4, 10, 0.90)" />
+                                  <stop offset="62%" stopColor="rgba(2, 4, 10, 0.58)" />
+                                  <stop offset="100%" stopColor="rgba(2, 4, 10, 0)" />
+                                </radialGradient>
+                                <radialGradient id="orbito-sphere-cast" cx="50%" cy="50%" r="50%" fx="22%" fy="50%">
+                                  <stop offset="0%" stopColor="rgba(2, 4, 12, 0.90)" />
+                                  <stop offset="38%" stopColor="rgba(2, 4, 12, 0.74)" />
+                                  <stop offset="68%" stopColor="rgba(2, 4, 12, 0.45)" />
+                                  <stop offset="88%" stopColor="rgba(2, 4, 12, 0.18)" />
+                                  <stop offset="100%" stopColor="rgba(2, 4, 12, 0)" />
+                                </radialGradient>
+                              </defs>
+                            </svg>
+                          )}
+
+                          {Array.from({ length: 16 }).map((_, i) => {
+                            const r = Math.floor(i / 4);
+                            const c = i % 4;
+                            let direction = "";
+                            if (i === 1 || i === 2 || i === 3 || i === 6)
+                              direction = "left";
+                            else if (i === 0 || i === 4 || i === 8 || i === 5)
+                              direction = "down";
+                            else if (i === 12 || i === 13 || i === 14 || i === 9)
+                              direction = "right";
+                            else if (i === 7 || i === 11 || i === 15 || i === 10)
+                              direction = "up";
+
+                            let rotation = 0;
+                            if (direction === "up") rotation = -90;
+                            else if (direction === "down") rotation = 90;
+                            else if (direction === "left") rotation = 180;
+                            else if (direction === "right") rotation = 0;
+
+                            // Trova se c'è una pedina
+                            let piecePlayer: Player | undefined;
+                            gameState.players.forEach((p) => {
+                              if (
+                                p.positions.find((pos) => pos.r === r && pos.c === c)
+                              ) {
+                                piecePlayer = p;
+                              }
+                            });
+
+                            // Se stiamo shiftando un pezzo avversario, le caselle adiacenti libere sono evidenziate
+                            let isPossibleShiftMove = false;
+                            if (
+                              gameState.orbitoPhase === "shift" &&
+                              gameState.orbitoActionState?.playerId &&
+                              gameState.orbitoActionState.pieceIdx !== undefined &&
+                              !piecePlayer
+                            ) {
+                              const oppP = gameState.players.find(
+                                (p) => p.id === gameState.orbitoActionState!.playerId,
                               );
                               if (
-                                px !== undefined &&
-                                oppPlayer &&
-                                oppPlayer.positions[px]
+                                oppP &&
+                                oppP.positions[gameState.orbitoActionState.pieceIdx]
                               ) {
-                                oppPlayer.positions[px].r = r;
-                                oppPlayer.positions[px].c = c;
+                                const oppPos =
+                                  oppP.positions[
+                                    gameState.orbitoActionState.pieceIdx
+                                  ];
+                                const dr = Math.abs(oppPos.r - r);
+                                const dc = Math.abs(oppPos.c - c);
+                                if (
+                                  (dr === 1 && dc === 0) ||
+                                  (dr === 0 && dc === 1)
+                                ) {
+                                  isPossibleShiftMove = true;
+                                }
                               }
-                              if (sfxVolume > 0) SoundManager.playMovePiece();
-                              return {
-                                ...prev,
-                                players: nPlayers,
-                                orbitoPhase: "place",
-                                orbitoActionState: undefined,
-                              };
-                            });
-                          }
-                        } else if (gameState.orbitoPhase === "place") {
-                          if (!piecePlayer) {
-                            const newPos = {
-                              r,
-                              c,
-                              id: `piece-${Math.random().toString(36).substr(2, 9)}`,
-                            };
-                            setGameState((prev) => {
-                              const nPlayers = prev.players.map((p, idx) =>
-                                idx === prev.currentPlayerIndex
-                                  ? {
-                                      ...p,
-                                      positions: [...p.positions, newPos],
+                            }
+
+                            const handleCellClick = () => {
+                              if (orbitoDragRef.current.wasDragged) return;
+                              if (!isUserTurn) return;
+                              if (gameState.orbitoPhase === "shift") {
+                                if (!piecePlayer && isPossibleShiftMove) {
+                                  // Move the opponent piece
+                                  setGameState((prev) => {
+                                    const px = prev.orbitoActionState?.pieceIdx;
+                                    const nPlayers = JSON.parse(
+                                      JSON.stringify(prev.players || []),
+                                    );
+                                    const oppPlayer = nPlayers.find(
+                                      (p: any) =>
+                                        p.id === prev.orbitoActionState?.playerId,
+                                    );
+                                    if (
+                                      px !== undefined &&
+                                      oppPlayer &&
+                                      oppPlayer.positions[px]
+                                    ) {
+                                      oppPlayer.positions[px].r = r;
+                                      oppPlayer.positions[px].c = c;
                                     }
-                                  : p,
-                              );
-                              if (sfxVolume > 0) SoundManager.playMovePiece();
-                              return {
-                                ...prev,
-                                players: nPlayers,
-                                orbitoPhase: "button",
+                                    if (sfxVolume > 0) SoundManager.playMovePiece();
+                                    return {
+                                      ...prev,
+                                      players: nPlayers,
+                                      orbitoPhase: "place",
+                                      orbitoActionState: undefined,
+                                    };
+                                  });
+                                }
+                              } else if (gameState.orbitoPhase === "place") {
+                                if (!piecePlayer) {
+                                  const newPos = {
+                                    r,
+                                    c,
+                                    id: `piece-${Math.random().toString(36).substr(2, 9)}`,
+                                  };
+                                  setGameState((prev) => {
+                                    const nPlayers = prev.players.map((p, idx) =>
+                                      idx === prev.currentPlayerIndex
+                                        ? {
+                                            ...p,
+                                            positions: [...p.positions, newPos],
+                                          }
+                                        : p,
+                                    );
+                                    if (sfxVolume > 0) SoundManager.playMovePiece();
+                                    return {
+                                      ...prev,
+                                      players: nPlayers,
+                                      orbitoPhase: "button",
+                                    };
+                                  });
+                                }
+                              }
+                            };
+
+                            return (
+                              <div
+                                key={i}
+                                onClick={handleCellClick}
+                                style={{
+                                  top: `calc(${r} * ((100% - 3 * 0.5rem) / 4) + ${r} * 0.5rem)`,
+                                  left: `calc(${c} * ((100% - 3 * 0.5rem) / 4) + ${c} * 0.5rem)`,
+                                  width: `calc((100% - 3 * 0.5rem) / 4)`,
+                                  height: `calc((100% - 3 * 0.5rem) / 4)`,
+                                  transform: isOrbito3D ? "translateZ(2px)" : undefined,
+                                }}
+                                className={`absolute rounded-full shadow-inner flex items-center justify-center ${isOrbito3D ? "bg-slate-800/95 border-2 border-slate-600/80 shadow-[inset_0_4px_10px_rgba(0,0,0,0.85)]" : "bg-slate-800 border border-slate-700/50 shadow-black/50"} ${!piecePlayer && (gameState.orbitoPhase === "place" || isPossibleShiftMove) ? "cursor-pointer hover:bg-slate-700" : ""}`}
+                              >
+                                <svg
+                                  style={{ transform: `rotate(${rotation}deg)` }}
+                                  className="w-[30px] h-[30px] text-slate-500 opacity-60 absolute pointer-events-none"
+                                  xmlns="http://www.w3.org/2000/svg"
+                                  viewBox="0 0 24 24"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth="4"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                >
+                                  <line x1="5" y1="12" x2="19" y2="12"></line>
+                                  <polyline points="12 5 19 12 12 19"></polyline>
+                                </svg>
+                                {isPossibleShiftMove && (
+                                  <div className="absolute w-3 h-3 rounded-full bg-amber-400 opacity-80 pointer-events-none animate-pulse z-10"></div>
+                                )}
+                              </div>
+                            );
+                          })}
+
+                          {/* Natural Elliptical Directional Cast Shadows for Orbito 3D Spheres */}
+                          {isOrbito3D &&
+                            gameState.players.map((p) =>
+                              p.positions.map((pos) => (
+                                <div
+                                  key={`orbito-shadow-${pos.id}`}
+                                  className="absolute pointer-events-none z-[15] transition-all duration-1000 ease-in-out"
+                                  style={{
+                                    top: `calc(${pos.r} * ((100% - 3 * 0.5rem) / 4) + ${pos.r} * 0.5rem + (((100% - 3 * 0.5rem) / 4) * 0.1))`,
+                                    left: `calc(${pos.c} * ((100% - 3 * 0.5rem) / 4) + ${pos.c} * 0.5rem + (((100% - 3 * 0.5rem) / 4) * 0.1))`,
+                                    width: `calc(((100% - 3 * 0.5rem) / 4) * 0.8)`,
+                                    height: `calc(((100% - 3 * 0.5rem) / 4) * 0.8)`,
+                                    transform: "translateZ(3px)",
+                                  }}
+                                >
+                                  <svg
+                                    viewBox="0 0 100 100"
+                                    className="w-full h-full overflow-visible pointer-events-none"
+                                  >
+                                    <g transform={`translate(50, 50) rotate(${shadowAngleDeg.toFixed(1)})`}>
+                                      <ellipse
+                                        cx={(48 * tiltFactor).toFixed(1)}
+                                        cy="0"
+                                        rx={(72 * tiltFactor).toFixed(1)}
+                                        ry="40"
+                                        fill="url(#orbito-sphere-cast)"
+                                      />
+                                      <ellipse
+                                        cx="7"
+                                        cy="0"
+                                        rx="39"
+                                        ry="34"
+                                        fill="url(#orbito-sphere-ao)"
+                                      />
+                                    </g>
+                                  </svg>
+                                </div>
+                              )),
+                            )}
+
+                          {/* Render pieces independently on top for animations */}
+                          {gameState.players.map((p) =>
+                            p.positions.map((pos, pieceIdx) => {
+                              const isSelectedOpponent =
+                                gameState.orbitoPhase === "shift" &&
+                                gameState.orbitoActionState?.playerId === p.id &&
+                                gameState.orbitoActionState?.pieceIdx === pieceIdx;
+
+                              const handlePieceClick = (e: React.MouseEvent) => {
+                                e.stopPropagation();
+                                if (orbitoDragRef.current.wasDragged) return;
+                                if (!isUserTurn) return;
+                                if (
+                                  gameState.orbitoPhase === "shift" &&
+                                  p.id !== currentPlayer?.id
+                                ) {
+                                  setGameState((prev) => ({
+                                    ...prev,
+                                    orbitoActionState: { playerId: p.id, pieceIdx },
+                                  }));
+                                }
                               };
-                            });
-                          }
-                        }
-                      };
 
-                      return (
-                        <div
-                          key={i}
-                          onClick={handleCellClick}
-                          style={{
-                            top: `calc(${r} * ((100% - 3 * 0.5rem) / 4) + ${r} * 0.5rem)`,
-                            left: `calc(${c} * ((100% - 3 * 0.5rem) / 4) + ${c} * 0.5rem)`,
-                            width: `calc((100% - 3 * 0.5rem) / 4)`,
-                            height: `calc((100% - 3 * 0.5rem) / 4)`,
-                          }}
-                          className={`absolute rounded-full shadow-inner flex items-center justify-center bg-slate-800 border border-slate-700/50 shadow-black/50 ${!piecePlayer && (gameState.orbitoPhase === "place" || isPossibleShiftMove) ? "cursor-pointer hover:bg-slate-700" : ""}`}
-                        >
-                          <svg
-                            style={{ transform: `rotate(${rotation}deg)` }}
-                            className="w-[30px] h-[30px] text-slate-500 opacity-60 absolute pointer-events-none"
-                            xmlns="http://www.w3.org/2000/svg"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="4"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          >
-                            <line x1="5" y1="12" x2="19" y2="12"></line>
-                            <polyline points="12 5 19 12 12 19"></polyline>
-                          </svg>
-                          {isPossibleShiftMove && (
-                            <div className="absolute w-3 h-3 rounded-full bg-amber-400 opacity-60 pointer-events-none animate-pulse z-10"></div>
+                              const pieceScale = isSelectedOpponent ? 1.12 : 1;
+
+                              return (
+                                <div
+                                  key={pos.id}
+                                  onClick={handlePieceClick}
+                                  className={`absolute rounded-full flex items-center justify-center z-20 transition-[top,left,box-shadow] duration-1000 ease-in-out ${isSelectedOpponent ? "ring-4 ring-amber-400" : isOrbito3D ? "" : "border border-white/20 shadow-lg"} ${gameState.orbitoPhase === "shift" && p.id !== currentPlayer?.id ? "cursor-pointer hover:scale-105" : "pointer-events-none"}`}
+                                  style={{
+                                    backgroundColor: p.color,
+                                    backgroundImage: isOrbito3D
+                                      ? `radial-gradient(circle at 26% 32%, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0.55) 8%, rgba(255,255,255,0.12) 20%, transparent 36%), radial-gradient(circle at 30% 36%, ${p.color} 0%, ${p.color} 42%, color-mix(in srgb, ${p.color} 58%, #000000) 74%, color-mix(in srgb, ${p.color} 24%, #000000) 93%, color-mix(in srgb, ${p.color} 36%, #000000) 100%)`
+                                      : undefined,
+                                    boxShadow: isSelectedOpponent
+                                      ? `0 0 30px ${p.color}, 0 0 12px #fbbf24, inset -4px -4px 10px rgba(0,0,0,0.55)`
+                                      : isOrbito3D
+                                        ? "inset -5px -4px 10px rgba(0,0,0,0.55), inset 2px 2px 5px rgba(255,255,255,0.22)"
+                                        : undefined,
+                                    top: `calc(${pos.r} * ((100% - 3 * 0.5rem) / 4) + ${pos.r} * 0.5rem + (((100% - 3 * 0.5rem) / 4) * 0.1))`,
+                                    left: `calc(${pos.c} * ((100% - 3 * 0.5rem) / 4) + ${pos.c} * 0.5rem + (((100% - 3 * 0.5rem) / 4) * 0.1))`,
+                                    width: `calc(((100% - 3 * 0.5rem) / 4) * 0.8)`,
+                                    height: `calc(((100% - 3 * 0.5rem) / 4) * 0.8)`,
+                                    opacity: isOrbito3D ? 1 : 0.7,
+                                    transform: isOrbito3D
+                                      ? `translateZ(10px) rotateZ(${-orbitoRotateZ}deg) translateY(-${sphereLiftPct.toFixed(1)}%) scale(${pieceScale.toFixed(3)}, ${(pieceScale * invCosTilt).toFixed(3)})`
+                                      : isSelectedOpponent
+                                        ? "scale(1.1)"
+                                        : undefined,
+                                  }}
+                                >
+                                  {!isOrbito3D && (
+                                    <div className="w-1/2 h-1/2 rounded-full bg-white/20 blur-[2px] -mt-2 -ml-2 pointer-events-none" />
+                                  )}
+                                </div>
+                              );
+                            }),
                           )}
-                        </div>
-                      );
-                    })}
 
-                    {/* Render pieces independently on top for animations */}
-                    {gameState.players.map((p) =>
-                      p.positions.map((pos, pieceIdx) => {
-                        const isSelectedOpponent =
-                          gameState.orbitoPhase === "shift" &&
-                          gameState.orbitoActionState?.playerId === p.id &&
-                          gameState.orbitoActionState?.pieceIdx === pieceIdx;
-
-                        const handlePieceClick = (e: React.MouseEvent) => {
-                          e.stopPropagation();
-                          if (!isUserTurn) return;
-                          if (
-                            gameState.orbitoPhase === "shift" &&
-                            p.id !== currentPlayer?.id
-                          ) {
-                            setGameState((prev) => ({
-                              ...prev,
-                              orbitoActionState: { playerId: p.id, pieceIdx },
-                            }));
-                          }
-                        };
-
-                        return (
+                          {/* Inner square border */}
                           <div
-                            key={pos.id}
-                            onClick={handlePieceClick}
-                            className={`absolute rounded-full shadow-lg flex items-center justify-center border border-white/20 z-20 transition-all duration-1000 ease-in-out ${isSelectedOpponent ? "ring-4 ring-amber-400 scale-110" : ""} ${gameState.orbitoPhase === "shift" && p.id !== currentPlayer?.id ? "cursor-pointer hover:scale-105" : "pointer-events-none"}`}
+                            className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[52%] h-[52%] border-2 border-slate-700/50 rounded-[1.25rem] pointer-events-none shadow-lg z-10"
                             style={{
-                              backgroundColor: p.color,
-                              top: `calc(${pos.r} * ((100% - 3 * 0.5rem) / 4) + ${pos.r} * 0.5rem + (((100% - 3 * 0.5rem) / 4) * 0.1))`,
-                              left: `calc(${pos.c} * ((100% - 3 * 0.5rem) / 4) + ${pos.c} * 0.5rem + (((100% - 3 * 0.5rem) / 4) * 0.1))`,
-                              width: `calc(((100% - 3 * 0.5rem) / 4) * 0.8)`,
-                              height: `calc(((100% - 3 * 0.5rem) / 4) * 0.8)`,
-                              opacity: 0.7,
+                              transform: isOrbito3D
+                                ? "translate(-50%, -50%) translateZ(2.5px)"
+                                : undefined,
                             }}
-                          >
-                            <div className="w-1/2 h-1/2 rounded-full bg-white/20 blur-[2px] -mt-2 -ml-2 pointer-events-none" />
-                          </div>
-                        );
-                      }),
-                    )}
+                          ></div>
 
-                    {/* Inner square border */}
-                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[52%] h-[52%] border-2 border-slate-700/50 rounded-[1.25rem] pointer-events-none shadow-lg z-10"></div>
+                          {/* Center button */}
+                          <div
+                            onClick={() => {
+                              if (orbitoDragRef.current.wasDragged) return;
+                              if (gameState.orbitoPhase === "button" && isUserTurn) {
+                                if (sfxVolume > 0) SoundManager.playPlaceWall();
 
-                    {/* Center button */}
-                    <div
-                      onClick={() => {
-                        if (gameState.orbitoPhase === "button" && isUserTurn) {
-                          if (sfxVolume > 0) SoundManager.playPlaceWall();
+                                const nPlayers = JSON.parse(
+                                  JSON.stringify(gameState.players || []),
+                                );
+                                const nWalls = gameState.walls;
 
-                          const nPlayers = JSON.parse(
-                            JSON.stringify(gameState.players || []),
-                          );
-                          const nWalls = gameState.walls;
+                                nPlayers.forEach((p: Player) => {
+                                  p.positions.forEach((pos) => {
+                                    const r = pos.r;
+                                    const c = pos.c;
+                                    const i = r * 4 + c;
+                                    let nextI = i;
+                                    if (i === 0) nextI = 4;
+                                    else if (i === 4) nextI = 8;
+                                    else if (i === 8) nextI = 12;
+                                    else if (i === 12) nextI = 13;
+                                    else if (i === 13) nextI = 14;
+                                    else if (i === 14) nextI = 15;
+                                    else if (i === 15) nextI = 11;
+                                    else if (i === 11) nextI = 7;
+                                    else if (i === 7) nextI = 3;
+                                    else if (i === 3) nextI = 2;
+                                    else if (i === 2) nextI = 1;
+                                    else if (i === 1) nextI = 0;
+                                    else if (i === 5) nextI = 9;
+                                    else if (i === 9) nextI = 10;
+                                    else if (i === 10) nextI = 6;
+                                    else if (i === 6) nextI = 5;
 
-                          nPlayers.forEach((p: Player) => {
-                            p.positions.forEach((pos) => {
-                              const r = pos.r;
-                              const c = pos.c;
-                              const i = r * 4 + c;
-                              let nextI = i;
-                              if (i === 0) nextI = 4;
-                              else if (i === 4) nextI = 8;
-                              else if (i === 8) nextI = 12;
-                              else if (i === 12) nextI = 13;
-                              else if (i === 13) nextI = 14;
-                              else if (i === 14) nextI = 15;
-                              else if (i === 15) nextI = 11;
-                              else if (i === 11) nextI = 7;
-                              else if (i === 7) nextI = 3;
-                              else if (i === 3) nextI = 2;
-                              else if (i === 2) nextI = 1;
-                              else if (i === 1) nextI = 0;
-                              else if (i === 5) nextI = 9;
-                              else if (i === 9) nextI = 10;
-                              else if (i === 10) nextI = 6;
-                              else if (i === 6) nextI = 5;
+                                    pos.r = Math.floor(nextI / 4);
+                                    pos.c = nextI % 4;
+                                  });
+                                });
 
-                              pos.r = Math.floor(nextI / 4);
-                              pos.c = nextI % 4;
-                            });
-                          });
+                                setGameState((prev) => ({
+                                  ...prev,
+                                  players: nPlayers,
+                                  orbitoPhase: "animating" as any,
+                                }));
 
-                          setGameState((prev) => ({
-                            ...prev,
-                            players: nPlayers,
-                            orbitoPhase: "animating" as any,
-                          }));
-
-                          setTimeout(() => {
-                            advanceTurn(nWalls, nPlayers, false);
-                          }, 1000);
-                        }
-                      }}
-                      className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-12 h-12 rounded-full border z-30 flex items-center justify-center transition-all duration-300 ${gameState.orbitoPhase === "button" ? "bg-emerald-600 border-emerald-400 shadow-[0_0_20px_rgba(16,185,129,0.8)] cursor-pointer hover:bg-emerald-500 active:scale-95 animate-pulse" : "bg-emerald-900/50 border-emerald-800 opacity-50"}`}
-                    ></div>
-                  </div>
-                </div>
+                                setTimeout(() => {
+                                  advanceTurn(nWalls, nPlayers, false);
+                                }, 1000);
+                              }
+                            }}
+                            style={{
+                              transform: isOrbito3D
+                                ? "translate(-50%, -50%) translateZ(9px)"
+                                : undefined,
+                              boxShadow: isOrbito3D
+                                ? gameState.orbitoPhase === "button"
+                                  ? "0 6px 0 #065f46, 0 10px 20px rgba(0,0,0,0.85), 0 0 22px rgba(16,185,129,0.9), inset 0 2px 4px rgba(255,255,255,0.45)"
+                                  : "0 5px 0 #064e3b, 0 8px 16px rgba(0,0,0,0.8), inset 0 2px 3px rgba(255,255,255,0.2)"
+                                : undefined,
+                            }}
+                            className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-12 h-12 rounded-full border z-30 flex items-center justify-center transition-all duration-300 ${gameState.orbitoPhase === "button" ? "bg-emerald-600 border-emerald-400 shadow-[0_0_20px_rgba(16,185,129,0.8)] cursor-pointer hover:bg-emerald-500 active:scale-95 animate-pulse" : "bg-emerald-900/50 border-emerald-800 opacity-50"}`}
+                          ></div>
+                        </div>
+                      </div>
+                    </>
+                  );
+                })()
               ) : (
                 <Board
                   players={gameState.players}
@@ -10322,8 +12072,20 @@ useEffect(() => {
               </div>
             </div>
           ) : gameState.status === "ended" ? (
-            <div className="mt-auto p-4 w-full max-w-sm mx-auto animate-in slide-in-from-bottom duration-500 fade-in">
-              <div className="bg-slate-900/95 p-6 rounded-[2.5rem] border-2 border-slate-700 shadow-2xl flex flex-col items-center gap-5">
+            <div
+              className={
+                gameMode === "quarto" || gameMode === "pylos"
+                  ? "absolute bottom-2 inset-x-3 z-30 w-auto max-w-sm mx-auto animate-in slide-in-from-bottom duration-500 fade-in"
+                  : "mt-auto p-4 w-full max-w-sm mx-auto animate-in slide-in-from-bottom duration-500 fade-in"
+              }
+            >
+              <div
+                className={
+                  gameMode === "quarto" || gameMode === "pylos"
+                    ? "bg-slate-900/65 backdrop-blur-[2px] p-4 rounded-[2rem] border-2 border-slate-600/80 shadow-2xl flex flex-col items-center gap-3"
+                    : "bg-slate-900/95 p-6 rounded-[2.5rem] border-2 border-slate-700 shadow-2xl flex flex-col items-center gap-5"
+                }
+              >
                 <div className="text-center space-y-1">
                   <h2
                     className={`text-3xl font-black italic text-transparent bg-clip-text uppercase ${
@@ -10350,6 +12112,17 @@ useEffect(() => {
                   <p className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em]">
                     {t.battleEnded}
                   </p>
+                  {gameState.gameMode === "pylos" && gameState.pylosState?.winReason && (
+                    <p className="text-xs font-bold text-amber-300 mt-1.5 uppercase text-center bg-amber-500/15 px-3 py-1 rounded-full border border-amber-500/35 w-fit mx-auto">
+                      {gameState.pylosState.winReason === "apex"
+                        ? language === "it"
+                          ? "🔺 Cima della piramide raggiunta!"
+                          : "🔺 Pyramid apex reached!"
+                        : language === "it"
+                          ? "⏳ Riserva avversaria esaurita!"
+                          : "⏳ Opponent ran out of spheres!"}
+                    </p>
+                  )}
                   {gameState.gameMode === "pente" && gameState.winner !== "draw" && !gameState.winningLine && (
                      <p className="text-xs font-bold text-amber-400 mt-2 uppercase text-center bg-amber-500/10 px-3 py-1 rounded-full border border-amber-500/30 w-fit mx-auto">
                        {language === "it" ? "Vittoria per 5 catture (10 Punti)" : "Win by 5 captures (10 Points)"}
@@ -10457,6 +12230,16 @@ useEffect(() => {
                               id: "stratego_master",
                               icon: "🚩",
                               name: language === "it" ? "Generale Supremo" : "Supreme General",
+                            },
+                            {
+                              id: "quarto_hard",
+                              icon: "🧩",
+                              name: language === "it" ? "Maestro Quarto" : "Quarto Master",
+                            },
+                            {
+                              id: "pylos_hard",
+                              icon: "🔺",
+                              name: language === "it" ? "Maestro Pylos" : "Pylos Master",
                             },
                           ].find((b) => b.id === badgeId);
                           return badgeInfo ? (
@@ -10595,6 +12378,34 @@ useEffect(() => {
                           : gameState.yinshState.phase === 'remove_ring' ? (language === 'it' ? 'PUNTO!' : 'SCORE!')
                           : t[gameState.turnPhase]
                         ) 
+                        : (gameState.gameMode === "quarto" && gameState.quartoState)
+                          ? (
+                              gameState.quartoState.phase === "select_piece"
+                                ? (language === "it"
+                                    ? "SCEGLI PEZZO"
+                                    : language === "fr"
+                                      ? "CHOISIR PIÈCE"
+                                      : language === "de"
+                                        ? "FIGUR WÄHLEN"
+                                        : language === "es"
+                                          ? "ELEGIR PIEZA"
+                                          : "SELECT PIECE")
+                                : (language === "it"
+                                    ? "PIAZZA PEZZO"
+                                    : language === "fr"
+                                      ? "PLACER PIÈCE"
+                                      : language === "de"
+                                        ? "FIGUR SETZEN"
+                                        : language === "es"
+                                          ? "COLOCAR PIEZA"
+                                          : "PLACE PIECE")
+                            )
+                        : (gameState.gameMode === "pylos" && gameState.pylosState)
+                          ? (
+                              gameState.pylosState.phase === "recover"
+                                ? (language === "it" ? "RECUPERO SFERE" : "RECOVER SPHERES")
+                                : (language === "it" ? "MUOVI SFERA" : "MOVE SPHERE")
+                            )
                         : (gameState.gameMode === "baduk" || gameState.gameMode === "pente" || gameState.gameMode === "hex" || gameState.gameMode === "domineering")
                           ? (gameState.consecutivePasses > 0 
                               ? (language === "it" ? "PASSO RIVALE" : language === "es" ? "PASE RIVAL" : language === "fr" ? "PASSE RIVAL" : language === "de" ? "PASS RIVALE" : "OPPONENT PASSED")
@@ -10869,7 +12680,14 @@ useEffect(() => {
                     isUserTurn &&
                     gameState.turnPhase === "moving" &&
                     !currentPlayer.isTrapped &&
-                    gameState.selectedPieceIndex !== null && (
+                    gameState.selectedPieceIndex !== null &&
+                    getWallOptions(
+                      currentPlayer.positions[gameState.selectedPieceIndex],
+                      gameState.walls,
+                      gameState.boardTheme,
+                      gameState.players,
+                      gameState.gameMode,
+                    ).length > 0 && (
                       <button
                         onClick={() =>
                           handleMove(
@@ -11414,69 +13232,14 @@ useEffect(() => {
                       else if (gameMode === "yinsh") setIsYinshRulesOpen(true);
                       else if (gameMode === "onitama") setIsOnitamaRulesOpen(true);
                       else if (gameMode === "baduk") setIsBadukRulesOpen(true);
+                      else if (gameMode === "quarto") setIsQuartoRulesOpen(true);
+                      else if (gameMode === "pylos") setIsPylosRulesOpen(true);
                       else setIsRulesOpen(true);
                     }}
                     className="w-full py-3.5 bg-blue-600 rounded-xl font-black text-base uppercase tracking-wider shadow-lg active:scale-95 transition-transform flex items-center justify-center gap-3"
                   >
                     📖 {t.howToPlay}
                   </button>
-                  <div className="grid grid-cols-1 gap-3">
-                    <div className="space-y-4">
-                      <label className="text-[9px] font-black text-slate-500 uppercase px-1 tracking-widest">
-                        {t.audio || "AUDIO"}
-                      </label>
-                      <div className="space-y-3 bg-slate-800 p-4 rounded-xl border border-white/5">
-                        <div className="space-y-1">
-                          <label className="text-[10px] font-bold text-slate-300 flex justify-between">
-                            <span>
-                              {(t as any).musicVolume || "Volume Musica"}
-                            </span>
-                            <span className="text-blue-400">
-                              {musicVolume}%
-                            </span>
-                          </label>
-                          <input
-                            type="range"
-                            min="0"
-                            max="100"
-                            value={musicVolume}
-                            onChange={(e) => {
-                              const v = parseInt(e.target.value, 10);
-                              setMusicVolume(v);
-                              localStorage.setItem(
-                                "wallgo_music_volume",
-                                v.toString(),
-                              );
-                            }}
-                            className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
-                          />
-                        </div>
-                        <div className="space-y-1">
-                          <label className="text-[10px] font-bold text-slate-300 flex justify-between">
-                            <span>
-                              {(t as any).sfxVolume || "Volume Effetti"}
-                            </span>
-                            <span className="text-blue-400">{sfxVolume}%</span>
-                          </label>
-                          <input
-                            type="range"
-                            min="0"
-                            max="100"
-                            value={sfxVolume}
-                            onChange={(e) => {
-                              const v = parseInt(e.target.value, 10);
-                              setSfxVolume(v);
-                              localStorage.setItem(
-                                "wallgo_sfx_volume",
-                                v.toString(),
-                              );
-                            }}
-                            className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
 
                   {/* BOARD THEME SELECTOR */}
                   {gameMode !== "orbito" && (
@@ -11824,6 +13587,58 @@ useEffect(() => {
                             </div>
                           </div>
                         </div>
+                      ) : gameMode === "quarto" || gameMode === "pylos" ? (
+                        <div className="space-y-1.5 flex flex-col">
+                          <label className="text-[9px] font-black text-slate-500 uppercase px-1 tracking-widest text-emerald-400">
+                            {language === "it"
+                              ? "Stile Scacchiera"
+                              : language === "fr"
+                                ? "Style du Plateau"
+                                : language === "de"
+                                  ? "Brett-Stil"
+                                  : language === "es"
+                                    ? "Estilo del Tablero"
+                                    : "Board Style"}
+                          </label>
+                          <div className="flex items-center gap-2 px-1 mb-1">
+                            <button
+                              onClick={() => {
+                                if (gameMode === "quarto") {
+                                  setQuartoBoardStyle("neon");
+                                  localStorage.setItem("wallgo_quarto_board_style", "neon");
+                                } else {
+                                  setPylosBoardStyle("neon");
+                                  localStorage.setItem("wallgo_pylos_board_style", "neon");
+                                }
+                              }}
+                              className={`flex-1 py-2 rounded-xl font-bold transition-colors border ${(gameMode === "quarto" ? quartoBoardStyle : pylosBoardStyle) === "neon" ? "bg-emerald-600 border-emerald-500 text-white" : "bg-slate-800 border-transparent text-slate-400"}`}
+                            >
+                              Neon
+                            </button>
+                            <button
+                              onClick={() => {
+                                if (gameMode === "quarto") {
+                                  setQuartoBoardStyle("classic");
+                                  localStorage.setItem("wallgo_quarto_board_style", "classic");
+                                } else {
+                                  setPylosBoardStyle("classic");
+                                  localStorage.setItem("wallgo_pylos_board_style", "classic");
+                                }
+                              }}
+                              className={`flex-1 py-2 rounded-xl font-bold transition-colors border ${(gameMode === "quarto" ? quartoBoardStyle : pylosBoardStyle) === "classic" ? "bg-emerald-600 border-emerald-500 text-white" : "bg-slate-800 border-transparent text-slate-400"}`}
+                            >
+                              {language === "it"
+                                ? "Classico"
+                                : language === "fr"
+                                  ? "Classique"
+                                  : language === "de"
+                                    ? "Klassisch"
+                                    : language === "es"
+                                      ? "Clásico"
+                                      : "Classic"}
+                            </button>
+                          </div>
+                        </div>
                       ) : null}
                     </>
                   )}
@@ -11870,114 +13685,338 @@ useEffect(() => {
                     </>
                   )}
 
-                  <div className="p-4 bg-slate-800/40 rounded-[1.5rem] border border-white/5 space-y-3">
-                    <div className="flex justify-between items-center">
-                      <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
-                        {t.appInfo}
-                      </span>
-                      <span className="text-[10px] font-black text-blue-400 bg-blue-400/10 px-2 py-0.5 rounded-full">
-                        {APP_VERSION}
-                      </span>
-                    </div>
-
-                    <button
-                      onClick={() => {
-                        Logger.info("Controllo aggiornamenti in corso...");
-                        if (Capacitor.isNativePlatform()) {
-                          if (
-                            window.confirm(
-                              language === "it"
-                                ? "Verrai reindirizzato al Play Store per scaricare l'ultimo aggiornamento. Vuoi procedere?"
-                                : "You will be redirected to the Play Store to download the latest update. Do you want to proceed?",
-                            )
-                          ) {
-                            window.open("https://play.google.com/apps/internaltest/4701630510403699104", "_system");
-                          }
-                        } else {
-                          if (
-                            window.confirm(
-                              language === "it"
-                                ? "Vuoi cercare e installare l'ultimo aggiornamento disponibile? L'app verrà riavviata."
-                                : "Do you want to check and install the latest available update? The app will restart.",
-                            )
-                          ) {
-                            window.location.reload();
-                          }
-                        }
-                      }}
-                      className="w-full py-2.5 bg-emerald-600/20 hover:bg-emerald-600/40 border border-emerald-500/50 text-emerald-400 rounded-xl font-black text-xs uppercase tracking-wider transition-colors flex items-center justify-center gap-2"
-                    >
-                      🔄{" "}
-                      {language === "it"
-                        ? "Cerca Aggiornamenti"
-                        : "Check for Updates"}
-                    </button>
-
-                    <div className="flex justify-between items-center">
-                      <div className="flex flex-col">
-                        <span className="text-[8px] font-black text-slate-500 uppercase mb-0.5">
-                          Studio
+                  {gameMode === "pylos" && (
+                    <div className="space-y-1.5">
+                      <label className="text-[9px] font-black text-sky-400 uppercase px-1 tracking-widest flex items-center gap-1.5">
+                        <span>🔺</span>
+                        <span>
+                          {language === "it"
+                            ? "Pylos — Variante Linea (4 Base / 3 Livello 2)"
+                            : "Pylos — Line Variant (4 Base / 3 Level 2)"}
                         </span>
-                        <span className="text-sm font-black text-white">
-                          {DEVELOPER_NAME}
-                        </span>
-                      </div>
-                      <div className="text-right flex flex-col items-end">
-                        <span className="text-[8px] font-black text-slate-500 uppercase mb-0.5">
-                          {language === "it" ? "Supporto :" : "Support :"}
-                        </span>
-                        <a
-                          href={`mailto:${SUPPORT_EMAIL}`}
-                          className="text-blue-400 font-black text-[10px] underline"
-                        >
-                          {SUPPORT_EMAIL}
-                        </a>
-                      </div>
-                    </div>
-                    <div className="flex gap-2">
+                      </label>
                       <button
                         onClick={() => {
-                          setIsSettingsOpen(false);
-                          setIsPrivacyOpen(true);
-                        }}
-                        className="flex-1 py-2.5 bg-slate-700/30 hover:bg-slate-700/50 transition-colors rounded-xl text-[8px] font-black uppercase tracking-[0.15em] text-slate-300 border border-white/5"
-                      >
-                        {t.privacyPolicy}
-                      </button>
-                      <button
-                        onClick={async () => {
-                          setShowDebugLogs(true);
-                          Logger.info("Test connessione Firebase in corso...");
+                          const v = !pylosLineVariant;
+                          setPylosLineVariant(v);
                           try {
-                            if (!deviceId)
-                              throw new Error("Device ID non trovato");
-                            const testDoc = doc(db, "devices", deviceId);
-                            await setDoc(
-                              testDoc,
-                              { lastActive: new Date().toISOString() },
-                              { merge: true },
-                            );
-                            Logger.info(
-                              `✅ Firebase OK: Connessione riuscita!`,
-                            );
-                          } catch (e: any) {
-                            Logger.error(`❌ Errore Firebase: ${e.message}`);
-                          }
+                            localStorage.setItem("wallgo_pylos_line_variant", String(v));
+                          } catch (e) {}
                         }}
-                        className={`px-4 py-2.5 rounded-xl text-[8px] font-black uppercase tracking-[0.05em] border transition-colors bg-orange-600 border-orange-500 text-white`}
+                        className={`w-full p-3 rounded-xl border text-left transition-all active:scale-[0.99] flex items-center justify-between gap-3 ${
+                          pylosLineVariant
+                            ? "bg-sky-600/20 border-sky-400/70 text-sky-100"
+                            : "bg-slate-800 border-white/5 text-slate-400"
+                        }`}
                       >
-                        Test Firebase 🔥
+                        <span className="text-[11px] font-bold leading-snug">
+                          {language === "it"
+                            ? "Attiva recupero sfere con linea di 4 sulla base (4×4) o 3 sul 2° livello (3×3)"
+                            : "Enable sphere recovery on line of 4 on base (4×4) or 3 on level 2 (3×3)"}
+                        </span>
+                        <span
+                          className={`shrink-0 px-2.5 py-1 rounded-lg text-[10px] font-black uppercase ${
+                            pylosLineVariant ? "bg-emerald-500 text-slate-950" : "bg-slate-700 text-slate-300"
+                          }`}
+                        >
+                          {pylosLineVariant ? t.enabled : t.disabled}
+                        </span>
                       </button>
+                    </div>
+                  )}
+
+                  {gameMode !== "dominio" && gameMode !== "baduk" && gameMode !== "stratego" && (
+                    <div className="space-y-1.5">
+                      <label className="text-[9px] font-black text-slate-500 uppercase px-1 tracking-widest">
+                        {(t as any).startingPlayer || "Chi inizia?"}
+                      </label>
+                      <div className="flex gap-2">
+                        {(["human", "ai", "random"] as StartingPlayerPreference[]).map((pref) => (
+                          <button
+                            key={pref}
+                            onClick={() => {
+                              setStartingPreference(pref);
+                              try {
+                                localStorage.setItem("wallgo_starting_pref", pref);
+                              } catch (e) {}
+                            }}
+                            className={`flex-1 py-2.5 rounded-xl font-bold capitalize transition-all ${startingPreference === pref ? "bg-purple-600 shadow-lg text-white" : "bg-slate-800 text-slate-300"}`}
+                          >
+                            {pref === "human"
+                              ? (t as any).youStart || "Tu"
+                              : pref === "ai"
+                                ? (t as any).aiStarts || "Avversario"
+                                : (t as any).randomStart || "Casuale"}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isAppSettingsOpen && (
+        <div className="fixed inset-0 z-[2000] bg-black/85 backdrop-blur-md flex items-center justify-center p-2">
+          <div className="w-full max-w-xl bg-slate-900 rounded-[2.5rem] p-5 flex flex-col max-h-[95vh] animate-in slide-in-from-bottom duration-300 shadow-2xl overflow-y-auto border border-white/10">
+            <div className="flex justify-between items-center mb-5">
+              <h2 className="text-2xl font-black italic text-blue-400 uppercase tracking-tight">
+                {t.settings}
+              </h2>
+              <button
+                onClick={() => setIsAppSettingsOpen(false)}
+                className="w-8 h-8 bg-slate-800 rounded-full font-black text-white hover:bg-slate-700 transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-4 animate-in fade-in duration-200">
+              <div className="space-y-2">
+                <label className="text-[9px] font-black text-slate-500 uppercase px-1 tracking-widest">
+                  {t.audio || "AUDIO"}
+                </label>
+                <div className="space-y-3 bg-slate-800 p-4 rounded-xl border border-white/5">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-300 flex justify-between">
+                      <span>
+                        {(t as any).musicVolume || "Volume Musica"}
+                      </span>
+                      <span className="text-blue-400">
+                        {musicVolume}%
+                      </span>
+                    </label>
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      value={musicVolume}
+                      onChange={(e) => {
+                        const v = parseInt(e.target.value, 10);
+                        setMusicVolume(v);
+                        localStorage.setItem(
+                          "wallgo_music_volume",
+                          v.toString(),
+                        );
+                      }}
+                      className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-300 flex justify-between">
+                      <span>
+                        {(t as any).sfxVolume || "Volume Effetti"}
+                      </span>
+                      <span className="text-blue-400">{sfxVolume}%</span>
+                    </label>
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      value={sfxVolume}
+                      onChange={(e) => {
+                        const v = parseInt(e.target.value, 10);
+                        setSfxVolume(v);
+                        localStorage.setItem(
+                          "wallgo_sfx_volume",
+                          v.toString(),
+                        );
+                      }}
+                      className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                    />
+                  </div>
+
+                  {/* Reggae Instrumental Soundtrack Selector & Controls */}
+                  <div className="pt-2 border-t border-white/10 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-black text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
+                        <span>🎸</span>
+                        <span>
+                          {language === "it"
+                            ? "Colonna Sonora Reggae (Strumentale)"
+                            : language === "fr"
+                              ? "Bande-son Reggae (Instrumentale)"
+                              : language === "de"
+                                ? "Reggae-Soundtrack (Instrumental)"
+                                : language === "es"
+                                  ? "Banda Sonora Reggae (Instrumental)"
+                                  : "Reggae Soundtrack (Instrumental)"}
+                        </span>
+                      </span>
                       <button
-                        onClick={() => setShowDebugLogs(true)}
-                        className={`px-4 py-2.5 rounded-xl text-[8px] font-black uppercase tracking-[0.05em] border transition-colors ${showDebugLogs ? "bg-amber-600 border-amber-500 text-white" : "bg-slate-700/30 text-slate-400 border-white/5"}`}
+                        type="button"
+                        onClick={() =>
+                          SoundManager.setContinuousPlaylist(
+                            !SoundManager.getIsContinuousPlaylist(),
+                          )
+                        }
+                        className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider border transition-colors ${
+                          SoundManager.getIsContinuousPlaylist()
+                            ? "bg-emerald-500/20 border-emerald-500/50 text-emerald-300"
+                            : "bg-amber-500/20 border-amber-500/50 text-amber-300"
+                        }`}
                       >
-                        Debug 🐞
+                        {SoundManager.getIsContinuousPlaylist()
+                          ? language === "it"
+                            ? "🔁 Playlist Continua"
+                            : "🔁 Auto Playlist"
+                          : language === "it"
+                            ? "🔂 Ripeti Brano"
+                            : "🔂 Loop Track"}
+                      </button>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => SoundManager.prevTrack()}
+                        className="w-9 h-9 shrink-0 rounded-xl bg-slate-900 hover:bg-slate-700 border border-white/10 flex items-center justify-center text-sm text-white active:scale-95 transition-all"
+                        title={language === "it" ? "Brano precedente" : "Previous track"}
+                      >
+                        ⏮
+                      </button>
+
+                      <div className="relative flex-1 min-w-0">
+                        <select
+                          value={SoundManager.getCurrentTrackIndex()}
+                          onChange={(e) =>
+                            SoundManager.selectTrack(parseInt(e.target.value, 10), true)
+                          }
+                          className="w-full bg-slate-900 px-3 py-2 rounded-xl font-bold text-xs text-white border border-white/10 appearance-none outline-none focus:border-emerald-500 truncate pr-7"
+                        >
+                          {SoundManager.PLAYLIST.map((trk, idx) => (
+                            <option key={trk.id} value={idx}>
+                              {idx + 1}. {trk.title} — {trk.artist}
+                            </option>
+                          ))}
+                        </select>
+                        <div className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none opacity-50 text-[10px]">
+                          ▼
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => SoundManager.nextTrack()}
+                        className="w-9 h-9 shrink-0 rounded-xl bg-slate-900 hover:bg-slate-700 border border-white/10 flex items-center justify-center text-sm text-white active:scale-95 transition-all"
+                        title={language === "it" ? "Brano successivo" : "Next track"}
+                      >
+                        ⏭
                       </button>
                     </div>
                   </div>
                 </div>
-              )}
+              </div>
+
+              <div className="p-4 bg-slate-800/40 rounded-[1.5rem] border border-white/5 space-y-3">
+                <div className="flex justify-between items-center">
+                  <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
+                    {t.appInfo}
+                  </span>
+                  <span className="text-[10px] font-black text-blue-400 bg-blue-400/10 px-2 py-0.5 rounded-full">
+                    {APP_VERSION}
+                  </span>
+                </div>
+
+                <button
+                  onClick={() => {
+                    Logger.info("Controllo aggiornamenti in corso...");
+                    if (Capacitor.isNativePlatform()) {
+                      if (
+                        window.confirm(
+                          language === "it"
+                            ? "Verrai reindirizzato al Play Store per scaricare l'ultimo aggiornamento. Vuoi procedere?"
+                            : "You will be redirected to the Play Store to download the latest update. Do you want to proceed?",
+                        )
+                      ) {
+                        window.open("https://play.google.com/apps/internaltest/4701630510403699104", "_system");
+                      }
+                    } else {
+                      if (
+                        window.confirm(
+                          language === "it"
+                            ? "Vuoi cercare e installare l'ultimo aggiornamento disponibile? L'app verrà riavviata."
+                            : "Do you want to check and install the latest available update? The app will restart.",
+                        )
+                      ) {
+                        window.location.reload();
+                      }
+                    }
+                  }}
+                  className="w-full py-2.5 bg-emerald-600/20 hover:bg-emerald-600/40 border border-emerald-500/50 text-emerald-400 rounded-xl font-black text-xs uppercase tracking-wider transition-colors flex items-center justify-center gap-2"
+                >
+                  🔄{" "}
+                  {language === "it"
+                    ? "Cerca Aggiornamenti"
+                    : "Check for Updates"}
+                </button>
+
+                <div className="flex justify-between items-center">
+                  <div className="flex flex-col">
+                    <span className="text-[8px] font-black text-slate-500 uppercase mb-0.5">
+                      Studio
+                    </span>
+                    <span className="text-sm font-black text-white">
+                      {DEVELOPER_NAME}
+                    </span>
+                  </div>
+                  <div className="text-right flex flex-col items-end">
+                    <span className="text-[8px] font-black text-slate-500 uppercase mb-0.5">
+                      {language === "it" ? "Supporto :" : "Support :"}
+                    </span>
+                    <a
+                      href={`mailto:${SUPPORT_EMAIL}`}
+                      className="text-blue-400 font-black text-[10px] underline"
+                    >
+                      {SUPPORT_EMAIL}
+                    </a>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => {
+                      setIsAppSettingsOpen(false);
+                      setIsPrivacyOpen(true);
+                    }}
+                    className="flex-1 py-2.5 bg-slate-700/30 hover:bg-slate-700/50 transition-colors rounded-xl text-[8px] font-black uppercase tracking-[0.15em] text-slate-300 border border-white/5"
+                  >
+                    {t.privacyPolicy}
+                  </button>
+                  <button
+                    onClick={async () => {
+                      setShowDebugLogs(true);
+                      Logger.info("Test connessione Firebase in corso...");
+                      try {
+                        if (!deviceId)
+                          throw new Error("Device ID non trovato");
+                        const testDoc = doc(db, "devices", deviceId);
+                        await setDoc(
+                          testDoc,
+                          { lastActive: new Date().toISOString() },
+                          { merge: true },
+                        );
+                        Logger.info(
+                          `✅ Firebase OK: Connessione riuscita!`,
+                        );
+                      } catch (e: any) {
+                        Logger.error(`❌ Errore Firebase: ${e.message}`);
+                      }
+                    }}
+                    className={`px-4 py-2.5 rounded-xl text-[8px] font-black uppercase tracking-[0.05em] border transition-colors bg-orange-600 border-orange-500 text-white`}
+                  >
+                    Test Firebase 🔥
+                  </button>
+                  <button
+                    onClick={() => setShowDebugLogs(true)}
+                    className={`px-4 py-2.5 rounded-xl text-[8px] font-black uppercase tracking-[0.05em] border transition-colors ${showDebugLogs ? "bg-amber-600 border-amber-500 text-white" : "bg-slate-700/30 text-slate-400 border-white/5"}`}
+                  >
+                    Debug 🐞
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -12544,7 +14583,19 @@ useEffect(() => {
                 <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
                 </svg>
-                {historyData[historyMode] ? (language === "it" ? "Storia / Curiosità" : "History / Trivia") : (language === "it" ? "Ops..." : "Oops...")}
+                {historyData[historyMode]
+                  ? language === "it"
+                    ? "Storia / Curiosità"
+                    : language === "fr"
+                      ? "Histoire / Anecdotes"
+                      : language === "de"
+                        ? "Geschichte / Trivia"
+                        : language === "es"
+                          ? "Historia / Curiosidades"
+                          : "History / Trivia"
+                  : language === "it"
+                    ? "Ops..."
+                    : "Oops..."}
               </h2>
               <button
                 onClick={() => setIsHistoryOpen(false)}
@@ -12563,6 +14614,20 @@ useEffect(() => {
                 </div>
               )}
               {(() => {
+                if (historyMode === "pylos") {
+                  return (
+                    <button
+                      onClick={() => {
+                        setIsHistoryOpen(false);
+                        setIsPylosRulesOpen(true);
+                      }}
+                      className="w-full mt-6 py-3 bg-slate-800 rounded-2xl font-black text-sm text-sky-400 border border-sky-500/30 hover:bg-slate-700 transition-colors active:scale-95 flex items-center justify-center gap-2"
+                    >
+                      <span>❓</span>
+                      <span>{language === "it" ? "COME SI GIOCA? (PYLOS)" : language === "fr" ? "COMMENT JOUER ? (PYLOS)" : language === "de" ? "SPIELANLEITUNG (PYLOS)" : language === "es" ? "¿CÓMO JUGAR? (PYLOS)" : "HOW TO PLAY? (PYLOS)"}</span>
+                    </button>
+                  );
+                }
                 const isUnlocked = 
                   isModeUnlocked(historyMode);
                 
@@ -12606,7 +14671,7 @@ useEffect(() => {
                               const expectedPassword = `${yyyy}${gamePrefix}${mm}${dd}`;
 
                               if (pwd.toUpperCase() === expectedPassword || pwd.toLowerCase() === "wallgo2026" || pwd.toLowerCase() === "zioseb2026" || pwd.toLowerCase() === "sblocca") { 
-                                 handleUnlockGameWithoutCost(historyMode);
+                                 handleUnlockGameWithoutCost(historyMode as GameMode);
                                  setUnlockPassword("");
                               } else {
                                  setUnlockPassword(""); // Clear on fail
@@ -13554,6 +15619,920 @@ useEffect(() => {
           </div>
         </div>
       )}
+      {isQuartoRulesOpen && (
+        <div className="fixed inset-0 z-[2000] bg-black/85 backdrop-blur-md flex items-center justify-center p-2">
+          <div className="w-full max-w-xl bg-slate-900 rounded-[2.5rem] p-6 flex flex-col max-h-[95vh] animate-in slide-in-from-bottom duration-300 shadow-2xl overflow-y-auto border border-indigo-500/30">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-2xl font-black italic text-indigo-400 uppercase tracking-tight flex items-center gap-2">
+                <span className="text-3xl">🧩</span>
+                {language === "it"
+                  ? "COME SI GIOCA"
+                  : language === "fr"
+                    ? "COMMENT JOUER"
+                    : language === "de"
+                      ? "SPIELANLEITUNG"
+                      : language === "es"
+                        ? "CÓMO JUGAR"
+                        : "HOW TO PLAY"}{" "}
+                (QUARTO)
+              </h2>
+              <button
+                onClick={() => setIsQuartoRulesOpen(false)}
+                className="w-10 h-10 bg-slate-800 rounded-full flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-700 transition-colors"
+                aria-label="Chiudi"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
+              <div className="space-y-6">
+                {/* Introduzione */}
+                <div className="bg-slate-800/50 rounded-2xl p-4 border border-slate-700/50">
+                  <p className="text-slate-300 font-medium text-sm leading-relaxed">
+                    {language === "it"
+                      ? "Quarto è un gioco astratto per due giocatori ideato dal matematico Blaise Muller. Si gioca su una griglia 4×4 con 16 pezzi tridimensionali unici. La caratteristica fondamentale che lo distingue è che non scegli tu il pezzo da posizionare, ma è il tuo avversario a sceglierlo per te."
+                      : language === "fr"
+                        ? "Quarto est un jeu de stratégie abstrait pour deux joueurs conçu par le mathématicien Blaise Muller. Il se joue sur une grille de 4×4 avec 16 pièces tridimensionnelles uniques. Sa caractéristique fondamentale est que ce n'est pas vous qui choisissez la pièce à placer, mais votre adversaire qui la choisit pour vous."
+                        : language === "de"
+                          ? "Quarto ist ein abstraktes Strategiespiel für zwei Spieler, das vom Mathematiker Blaise Muller entwickelt wurde. Gespielt wird auf einem 4×4-Gitter mit 16 einzigartigen dreidimensionalen Figuren. Das besondere Merkmal ist, dass nicht du die Figur auswählst, die du setzt, sondern dein Gegner sie für dich bestimmt."
+                          : language === "es"
+                            ? "Quarto es un juego abstracto para dos jugadores ideado por el matemático Blaise Muller. Se juega en una cuadrícula de 4×4 con 16 piezas tridimensionales únicas. La característica fundamental que lo distingue es que tú no eliges la pieza que vas a colocar, sino que tu adversario la elige por ti."
+                            : "Quarto is an abstract strategy game for two players designed by mathematician Blaise Muller. It is played on a 4×4 grid with 16 unique three-dimensional pieces. Its defining feature is that you do not choose the piece you place—your opponent chooses it for you."}
+                  </p>
+                </div>
+
+                {/* I 16 Pezzi e le 4 Caratteristiche */}
+                <div className="bg-slate-800/30 p-4 rounded-xl border border-white/5">
+                  <h3 className="text-lg font-black text-indigo-400 mb-3 uppercase">
+                    {language === "it"
+                      ? "I 16 Pezzi e le 4 Caratteristiche"
+                      : language === "fr"
+                        ? "Les 16 Pièces et les 4 Caractéristiques"
+                        : language === "de"
+                          ? "Die 16 Figuren und die 4 Merkmale"
+                          : language === "es"
+                            ? "Las 16 Piezas y las 4 Características"
+                            : "The 16 Pieces and 4 Characteristics"}
+                  </h3>
+                  <p className="text-slate-300 text-sm font-bold mb-3">
+                    {language === "it"
+                      ? "I 16 pezzi rappresentano tutte le combinazioni possibili (2^4 = 16) di quattro attributi binari:"
+                      : language === "fr"
+                        ? "Les 16 pièces représentent toutes les combinaisons possibles (2^4 = 16) de quatre attributs binaires :"
+                        : language === "de"
+                          ? "Die 16 Figuren repräsentieren alle möglichen Kombinationen (2^4 = 16) aus vier binären Eigenschaften:"
+                          : language === "es"
+                            ? "Las 16 piezas representan todas las combinaciones posibles (2^4 = 16) de cuatro atributos binarios:"
+                            : "The 16 pieces represent all possible combinations (2^4 = 16) of four binary attributes:"}
+                  </p>
+                  <ul className="text-sm text-slate-400 space-y-2 list-disc pl-5 mb-3">
+                    <li>
+                      <strong className="text-slate-200 font-bold">
+                        {language === "it"
+                          ? "Colore:"
+                          : language === "fr"
+                            ? "Couleur :"
+                            : language === "de"
+                              ? "Farbe:"
+                              : language === "es"
+                                ? "Color:"
+                                : "Color:"}
+                      </strong>{" "}
+                      {language === "it"
+                        ? "Chiaro o Scuro"
+                        : language === "fr"
+                          ? "Clair ou Foncé"
+                          : language === "de"
+                            ? "Hell oder Dunkel"
+                            : language === "es"
+                              ? "Clara u Oscura"
+                              : "Light or Dark"}
+                    </li>
+                    <li>
+                      <strong className="text-slate-200 font-bold">
+                        {language === "it"
+                          ? "Altezza:"
+                          : language === "fr"
+                            ? "Hauteur :"
+                            : language === "de"
+                              ? "Höhe:"
+                              : language === "es"
+                                ? "Altura:"
+                                : "Height:"}
+                      </strong>{" "}
+                      {language === "it"
+                        ? "Alto o Basso"
+                        : language === "fr"
+                          ? "Grand ou Petit"
+                          : language === "de"
+                            ? "Groß oder Klein"
+                            : language === "es"
+                              ? "Alta o Baja"
+                              : "Tall or Short"}
+                    </li>
+                    <li>
+                      <strong className="text-slate-200 font-bold">
+                        {language === "it"
+                          ? "Forma:"
+                          : language === "fr"
+                            ? "Forme :"
+                            : language === "de"
+                              ? "Form:"
+                              : language === "es"
+                                ? "Forma:"
+                                : "Shape:"}
+                      </strong>{" "}
+                      {language === "it"
+                        ? "Cilindrico (a base tonda) o Parallelepipedo (a base quadrata)"
+                        : language === "fr"
+                          ? "Cylindrique (base ronde) ou Parallélépipède (base carrée)"
+                          : language === "de"
+                            ? "Zylindrisch (runde Basis) oder Quaderförmig (quadratische Basis)"
+                            : language === "es"
+                              ? "Cilíndrica (base redonda) o Paralelepípedo (base cuadrada)"
+                              : "Cylindrical (round base) or Square Prism (square base)"}
+                    </li>
+                    <li>
+                      <strong className="text-slate-200 font-bold">
+                        {language === "it"
+                          ? "Sommità:"
+                          : language === "fr"
+                            ? "Sommet :"
+                            : language === "de"
+                              ? "Oberseite:"
+                              : language === "es"
+                                ? "Parte superior:"
+                                : "Top:"}
+                      </strong>{" "}
+                      {language === "it"
+                        ? "Con buco (forato) o Senza buco (pieno)"
+                        : language === "fr"
+                          ? "Avec trou (creux) ou Sans trou (plein)"
+                          : language === "de"
+                            ? "Mit Vertiefung (hohl) oder Ohne Vertiefung (massiv)"
+                            : language === "es"
+                              ? "Con agujero (hueca) o Sin agujero (sólida)"
+                              : "Hollow (with hole) or Solid (without hole)"}
+                    </li>
+                  </ul>
+                  <p className="text-slate-300 text-sm font-bold">
+                    {language === "it"
+                      ? "Nessun pezzo è identico a un altro."
+                      : language === "fr"
+                        ? "Aucune pièce n'est identique à une autre."
+                        : language === "de"
+                          ? "Keine Figur gleicht einer anderen."
+                          : language === "es"
+                            ? "Ninguna pieza es idéntica a otra."
+                            : "No two pieces are identical."}
+                  </p>
+                </div>
+
+                {/* Obiettivo del Gioco */}
+                <div className="bg-slate-800/30 p-4 rounded-xl border border-white/5">
+                  <h3 className="text-lg font-black text-indigo-400 mb-3 uppercase">
+                    {language === "it"
+                      ? "Obiettivo del Gioco"
+                      : language === "fr"
+                        ? "Objectif du Jeu"
+                        : language === "de"
+                          ? "Ziel des Spiels"
+                          : language === "es"
+                            ? "Objetivo del Juego"
+                            : "Objective of the Game"}
+                  </h3>
+                  <p className="text-slate-300 text-sm font-bold mb-2">
+                    {language === "it"
+                      ? "Vince il giocatore che riesce ad allineare per primo 4 pezzi aventi almeno una caratteristica in comune lungo:"
+                      : language === "fr"
+                        ? "Le gagnant est le premier joueur qui parvient à aligner 4 pièces ayant au moins une caractéristique commune sur :"
+                        : language === "de"
+                          ? "Es gewinnt der Spieler, der zuerst 4 Figuren mit mindestens einem gemeinsamen Merkmal in einer Reihe bildet entlang:"
+                          : language === "es"
+                            ? "Gana el jugador que logre alinear primero 4 piezas que compartan al menos una característica en común a lo largo de:"
+                            : "The winner is the first player to align 4 pieces sharing at least one common characteristic along:"}
+                  </p>
+                  <ul className="text-sm text-slate-400 space-y-1.5 list-disc pl-5 mb-3">
+                    <li>
+                      {language === "it"
+                        ? "Una riga orizzontale"
+                        : language === "fr"
+                          ? "Une ligne horizontale"
+                          : language === "de"
+                            ? "Einer horizontalen Reihe"
+                            : language === "es"
+                              ? "Una fila horizontal"
+                              : "A horizontal row"}
+                    </li>
+                    <li>
+                      {language === "it"
+                        ? "Una colonna verticale"
+                        : language === "fr"
+                          ? "Une colonne verticale"
+                          : language === "de"
+                            ? "Einer vertikalen Spalte"
+                            : language === "es"
+                              ? "Una columna vertical"
+                              : "A vertical column"}
+                    </li>
+                    <li>
+                      {language === "it"
+                        ? "Una delle due diagonali"
+                        : language === "fr"
+                          ? "L'une des deux diagonales"
+                          : language === "de"
+                            ? "Einer der beiden Diagonalen"
+                            : language === "es"
+                              ? "Una de las dos diagonales"
+                              : "One of the two diagonals"}
+                    </li>
+                  </ul>
+                  <p className="text-slate-400 text-xs italic leading-relaxed">
+                    {language === "it"
+                      ? "(Esempio: una linea formata da 4 pezzi tutti alti, oppure tutti scuri, oppure tutti forati, indipendentemente dalle altre tre caratteristiche)."
+                      : language === "fr"
+                        ? "(Exemple : une ligne formée de 4 pièces toutes grandes, ou toutes foncées, ou toutes creuses, indépendamment des trois autres caractéristiques)."
+                        : language === "de"
+                          ? "(Beispiel: eine Reihe aus 4 Figuren, die alle groß, alle dunkel oder alle hohl sind, unabhängig von den anderen drei Merkmalen)."
+                          : language === "es"
+                            ? "(Ejemplo: una línea formada por 4 piezas todas altas, o todas oscuras, o todas huecas, independientemente de las otras tres características)."
+                            : "(Example: a line of 4 pieces that are all tall, or all dark, or all hollow, regardless of the other three characteristics)."}
+                  </p>
+                </div>
+
+                {/* Svolgimento del Turno */}
+                <div className="bg-slate-800/30 p-4 rounded-xl border border-white/5">
+                  <h3 className="text-lg font-black text-indigo-400 mb-3 uppercase">
+                    {language === "it"
+                      ? "Svolgimento del Turno"
+                      : language === "fr"
+                        ? "Déroulement d'un Tour"
+                        : language === "de"
+                          ? "Zugablauf"
+                          : language === "es"
+                            ? "Desarrollo del Turno"
+                            : "Turn Sequence"}
+                  </h3>
+                  <p className="text-slate-300 text-sm font-bold mb-3">
+                    {language === "it"
+                      ? "Tutti i pezzi iniziano fuori dal tavoliere. I giocatori si alternano secondo questo schema:"
+                      : language === "fr"
+                        ? "Toutes les pièces commencent en dehors du plateau. Les joueurs alternent selon ce schéma :"
+                        : language === "de"
+                          ? "Alle Figuren beginnen außerhalb des Spielbretts. Die Spieler wechseln sich nach folgendem Schema ab:"
+                          : language === "es"
+                            ? "Todas las piezas comienzan fuera del tablero. Los jugadores se alternan siguiendo este esquema:"
+                            : "All pieces start off the board. Players alternate according to this sequence:"}
+                  </p>
+                  <div className="space-y-3 mb-4">
+                    {(language === "it"
+                      ? [
+                          {
+                            title: "Scelta del pezzo:",
+                            desc: "Il Giocatore 1 sceglie uno dei pezzi disponibili nella riserva e lo consegna al Giocatore 2.",
+                          },
+                          {
+                            title: "Piazzamento:",
+                            desc: "Il Giocatore 2 posiziona il pezzo ricevuto su una qualsiasi casella libera della griglia 4×4.",
+                          },
+                          {
+                            title: "Passaggio:",
+                            desc: "Il Giocatore 2 sceglie un nuovo pezzo tra quelli rimasti a bordo plancia e lo consegna al Giocatore 1.",
+                          },
+                        ]
+                      : language === "fr"
+                        ? [
+                            {
+                              title: "Choix de la pièce :",
+                              desc: "Le Joueur 1 choisit l'une des pièces disponibles dans la réserve et la donne au Joueur 2.",
+                            },
+                            {
+                              title: "Placement :",
+                              desc: "Le Joueur 2 place la pièce reçue sur n'importe quelle case libre de la grille 4×4.",
+                            },
+                            {
+                              title: "Transmission :",
+                              desc: "Le Joueur 2 choisit une nouvelle pièce parmi celles restantes et la donne au Joueur 1.",
+                            },
+                          ]
+                        : language === "de"
+                          ? [
+                              {
+                                title: "Figurenauswahl:",
+                                desc: "Spieler 1 wählt eine der verfügbaren Figuren aus dem Vorrat und übergibt sie an Spieler 2.",
+                              },
+                              {
+                                title: "Platzierung:",
+                                desc: "Spieler 2 setzt die erhaltene Figur auf ein beliebiges freies Feld des 4×4-Gitters.",
+                              },
+                              {
+                                title: "Übergabe:",
+                                desc: "Spieler 2 wählt eine neue Figur aus dem verbleibenden Vorrat und übergibt sie an Spieler 1.",
+                              },
+                            ]
+                          : language === "es"
+                            ? [
+                                {
+                                  title: "Elección de la pieza:",
+                                  desc: "El Jugador 1 elige una de las piezas disponibles en la reserva y se la entrega al Jugador 2.",
+                                },
+                                {
+                                  title: "Colocación:",
+                                  desc: "El Jugador 2 coloca la pieza recibida en cualquier casilla libre de la cuadrícula 4×4.",
+                                },
+                                {
+                                  title: "Entrega:",
+                                  desc: "El Jugador 2 elige una nueva pieza entre las restantes fuera del tablero y se la entrega al Jugador 1.",
+                                },
+                              ]
+                            : [
+                                {
+                                  title: "Piece Selection:",
+                                  desc: "Player 1 chooses one of the available pieces from the reserve and hands it to Player 2.",
+                                },
+                                {
+                                  title: "Placement:",
+                                  desc: "Player 2 places the received piece on any free square of the 4×4 grid.",
+                                },
+                                {
+                                  title: "Handover:",
+                                  desc: "Player 2 chooses a new piece from those remaining off the board and hands it to Player 1.",
+                                },
+                              ]
+                    ).map((step, idx) => (
+                      <div key={idx} className="flex gap-3 items-start">
+                        <div className="w-6 h-6 rounded-full bg-indigo-900/50 text-indigo-300 flex items-center justify-center font-black text-xs shrink-0 border border-indigo-500/30 mt-0.5">
+                          {idx + 1}
+                        </div>
+                        <p className="text-sm text-slate-400 leading-relaxed">
+                          <strong className="text-slate-200 font-bold">{step.title}</strong> {step.desc}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-slate-300 text-sm font-medium leading-relaxed">
+                    {language === "it"
+                      ? "Il ciclo si ripete alternativamente finché non si verifica la vittoria o un pareggio. Se tutte le 16 caselle vengono riempite senza che si sia formato alcun allineamento valido con le 4 caratteristiche comuni, la partita termina in pareggio."
+                      : language === "fr"
+                        ? "Le cycle se répète alternativement jusqu'à la victoire ou au match nul. Si les 16 cases sont remplies sans qu'aucun alignement valide de 4 pièces ayant une caractéristique commune ne soit formé, la partie se termine par un match nul."
+                        : language === "de"
+                          ? "Dieser Ablauf wiederholt sich abwechselnd bis zum Sieg oder Unentschieden. Wenn alle 16 Felder besetzt sind, ohne dass eine gültige 4er-Reihe mit einem gemeinsamen Merkmal entstanden ist, endet die Partie unentschieden."
+                          : language === "es"
+                            ? "El ciclo se repite alternativamente hasta que se produce la victoria o un empate. Si se llenan las 16 casillas sin que se haya formado ninguna alineación válida con una característica en común, la partida termina en empate."
+                            : "The cycle repeats alternately until a win or a draw occurs. If all 16 squares are filled without forming any valid alignment with a shared characteristic, the game ends in a draw."}
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-8 flex justify-center pb-2">
+                <a
+                  href="https://www.youtube.com/results?search_query=how+to+play+quarto+board+game"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="bg-red-600/10 w-full hover:bg-red-600/20 border border-red-500/30 text-red-100/90 py-4 rounded-2xl flex items-center justify-center gap-3 font-bold transition-all active:scale-95 shadow-lg shadow-red-900/20"
+                >
+                  <svg className="w-6 h-6 text-red-500 shadow-sm" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.5 12 3.5 12 3.5s-7.505 0-9.377.55a3.016 3.016 0 0 0-2.122 2.136C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.55 9.376.55 9.376.55s7.505 0 9.377-.55a3.016 3.016 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" />
+                  </svg>
+                  <span>{t.searchTutorialVideo}</span>
+                </a>
+              </div>
+
+              <button
+                onClick={() => {
+                  setIsQuartoRulesOpen(false);
+                  setHistoryMode("quarto");
+                  setIsHistoryOpen(true);
+                }}
+                className="w-full mt-8 py-3 bg-slate-800 rounded-2xl font-black text-sm text-indigo-400 border border-indigo-500/30 hover:bg-slate-700 transition-colors active:scale-95 flex items-center justify-center gap-2"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                </svg>
+                {language === "it"
+                  ? "STORIA / CURIOSITÀ"
+                  : language === "fr"
+                    ? "HISTOIRE / ANECDOTES"
+                    : language === "de"
+                      ? "GESCHICHTE / TRIVIA"
+                      : language === "es"
+                        ? "HISTORIA / CURIOSIDADES"
+                        : "HISTORY / TRIVIA"}
+              </button>
+
+              <button
+                onClick={() => setIsQuartoRulesOpen(false)}
+                className="w-full mt-6 py-4 bg-indigo-900/30 text-indigo-300 rounded-xl font-black text-base uppercase tracking-wider shadow-lg active:scale-95 transition-transform hover:bg-indigo-900/50 border border-indigo-500/30"
+              >
+                {language === "it"
+                  ? "CHIUDI"
+                  : language === "fr"
+                    ? "FERMER"
+                    : language === "de"
+                      ? "SCHLIESSEN"
+                      : language === "es"
+                        ? "CERRAR"
+                        : "CLOSE"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {isPylosPreviewOpen && (
+        <div
+          className="fixed inset-0 z-[1950] flex items-center justify-center p-6 bg-slate-950/90 backdrop-blur-md animate-in fade-in duration-300"
+          onClick={() => setIsPylosPreviewOpen(false)}
+        >
+          <div
+            className="w-full max-w-xs bg-slate-900 rounded-[2.5rem] border border-sky-500/30 shadow-[0_0_50px_rgba(14,165,233,0.22)] overflow-hidden animate-in zoom-in-95 duration-300"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-7 flex flex-col items-center text-center">
+              <div className="mb-2 drop-shadow-xl h-20 flex items-center justify-center">
+                <svg
+                  viewBox="0 0 80 80"
+                  className="w-16 h-16 drop-shadow-[0_6px_12px_rgba(0,0,0,0.65)] overflow-visible"
+                  fill="none"
+                  xmlns="http://www.w3.org/2000/svg"
+                >
+                  <defs>
+                    <radialGradient id="pylosPreviewLight" cx="32%" cy="28%" r="68%">
+                      <stop offset="0%" stopColor="#fef3c7" />
+                      <stop offset="55%" stopColor="#f59e0b" />
+                      <stop offset="100%" stopColor="#92400e" />
+                    </radialGradient>
+                    <radialGradient id="pylosPreviewDark" cx="32%" cy="28%" r="68%">
+                      <stop offset="0%" stopColor="#93c5fd" />
+                      <stop offset="50%" stopColor="#2563eb" />
+                      <stop offset="100%" stopColor="#1e1b4b" />
+                    </radialGradient>
+                  </defs>
+                  <polygon points="8,56 40,70 40,75 8,61" fill="#5c2d16" />
+                  <polygon points="72,56 40,70 40,75 72,61" fill="#3b1a0b" />
+                  <polygon points="40,42 72,56 40,70 8,56" fill="#854d27" stroke="#d97706" strokeWidth="1.2" />
+                  <circle cx="26" cy="52" r="7.5" fill="url(#pylosPreviewDark)" stroke="#60a5fa" strokeWidth="0.6" />
+                  <circle cx="40" cy="46" r="7.5" fill="url(#pylosPreviewLight)" stroke="#fde68a" strokeWidth="0.6" />
+                  <circle cx="54" cy="52" r="7.5" fill="url(#pylosPreviewDark)" stroke="#60a5fa" strokeWidth="0.6" />
+                  <circle cx="40" cy="58" r="7.8" fill="url(#pylosPreviewLight)" stroke="#fde68a" strokeWidth="0.6" />
+                  <circle cx="33" cy="43" r="7.5" fill="url(#pylosPreviewLight)" stroke="#fde68a" strokeWidth="0.6" />
+                  <circle cx="47" cy="43" r="7.5" fill="url(#pylosPreviewDark)" stroke="#60a5fa" strokeWidth="0.6" />
+                  <circle cx="40" cy="48" r="7.8" fill="url(#pylosPreviewDark)" stroke="#60a5fa" strokeWidth="0.6" />
+                  <g>
+                    <animateTransform attributeName="transform" type="translate" values="0,0; 0,-4.5; 0,0" dur="2.4s" repeatCount="indefinite" />
+                    <circle cx="40" cy="34" r="8.2" fill="url(#pylosPreviewLight)" stroke="#fef08a" strokeWidth="1" />
+                    <ellipse cx="37.5" cy="31.5" rx="2.8" ry="1.6" fill="#ffffff" opacity="0.75" />
+                  </g>
+                </svg>
+              </div>
+              <h2 className="text-2xl font-black text-sky-400 mb-1 uppercase tracking-widest">PYLOS</h2>
+              <div className="px-3 py-1 rounded-full bg-amber-500/20 border border-amber-400/40 text-amber-300 text-[10px] font-black uppercase tracking-widest mb-4">
+                {language === "it" ? "COMING SOON • IN ARRIVO" : "COMING SOON"}
+              </div>
+              <p className="text-slate-400 text-xs font-medium mb-5 px-1 leading-relaxed">
+                {language === "it"
+                  ? "La sfida piramidale 3D arriverà prestissimo! Intanto scopri le regole ufficiali e la sua storia."
+                  : language === "fr"
+                    ? "Le défi pyramidal 3D arrive très bientôt ! Découvrez en attendant les règles officielles et son histoire."
+                    : language === "de"
+                      ? "Die 3D-Pyramiden-Herausforderung erscheint bald! Entdecke vorab die offiziellen Regeln und die Geschichte."
+                      : language === "es"
+                        ? "¡El desafío piramidal 3D llegará muy pronto! Mientras tanto, descubre las reglas oficiales y su historia."
+                        : "The 3D pyramid challenge is coming very soon! Meanwhile, explore its official rules and history."}
+              </p>
+
+              <div className="w-full space-y-2">
+                <button
+                  onClick={() => {
+                    setIsPylosPreviewOpen(false);
+                    setIsPylosRulesOpen(true);
+                  }}
+                  className="w-full py-3 bg-slate-800 rounded-2xl font-black text-sm text-sky-400 border border-sky-500/30 hover:bg-slate-700 transition-colors active:scale-95"
+                >
+                  {language === "it" ? "COME SI GIOCA?" : language === "fr" ? "COMMENT JOUER ?" : language === "de" ? "SPIELANLEITUNG" : language === "es" ? "¿CÓMO JUGAR?" : "HOW TO PLAY?"}
+                </button>
+
+                <button
+                  onClick={() => {
+                    setIsPylosPreviewOpen(false);
+                    setHistoryMode("pylos");
+                    setIsHistoryOpen(true);
+                  }}
+                  className="w-full py-3 bg-slate-800 rounded-2xl font-black text-sm text-orange-400 border border-orange-500/30 hover:bg-slate-700 transition-colors active:scale-95 flex items-center justify-center gap-2"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                  </svg>
+                  {language === "it" ? "STORIA / CURIOSITÀ" : language === "fr" ? "HISTOIRE / ANECDOTES" : language === "de" ? "GESCHICHTE / TRIVIA" : language === "es" ? "HISTORIA / CURIOSIDADES" : "HISTORY / TRIVIA"}
+                </button>
+
+                <a
+                  href="https://www.youtube.com/results?search_query=how+to+play+pylos+board+game"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full py-3 bg-slate-800 rounded-2xl font-black text-sm text-red-400 border border-red-500/30 hover:bg-slate-700 transition-colors active:scale-95 flex items-center justify-center gap-2"
+                >
+                  <svg className="w-5 h-5 text-red-500" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.5 12 3.5 12 3.5s-7.505 0-9.377.55a3.016 3.016 0 0 0-2.122 2.136C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.55 9.376.55 9.376.55s7.505 0 9.377-.55a3.016 3.016 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
+                  </svg>
+                  {t.searchTutorialVideo}
+                </a>
+
+                <button
+                  onClick={() => setIsPylosPreviewOpen(false)}
+                  className="w-full py-3 bg-slate-800 rounded-2xl font-black text-sm text-slate-400 hover:bg-slate-700 transition-colors active:scale-95"
+                >
+                  {language === "it" ? "CHIUDI" : language === "fr" ? "FERMER" : language === "de" ? "SCHLIESSEN" : language === "es" ? "CERRAR" : "CLOSE"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {isPylosRulesOpen && (
+        <div className="fixed inset-0 z-[2000] bg-black/85 backdrop-blur-md flex items-center justify-center p-2">
+          <div className="w-full max-w-xl bg-slate-900 rounded-[2.5rem] p-6 flex flex-col max-h-[95vh] animate-in slide-in-from-bottom duration-300 shadow-2xl overflow-y-auto border border-sky-500/30">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-2xl font-black italic text-sky-400 uppercase tracking-tight flex items-center gap-2">
+                <span className="text-3xl">🔺</span>
+                {language === "it"
+                  ? "COME SI GIOCA"
+                  : language === "fr"
+                    ? "COMMENT JOUER"
+                    : language === "de"
+                      ? "SPIELANLEITUNG"
+                      : language === "es"
+                        ? "CÓMO JUGAR"
+                        : "HOW TO PLAY"}{" "}
+                (PYLOS)
+              </h2>
+              <button
+                onClick={() => setIsPylosRulesOpen(false)}
+                className="w-10 h-10 bg-slate-800 rounded-full flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-700 transition-colors"
+                aria-label="Chiudi"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
+              <div className="space-y-6">
+                {/* Introduzione */}
+                <div className="bg-slate-800/50 rounded-2xl p-4 border border-slate-700/50">
+                  <p className="text-slate-300 font-medium text-sm leading-relaxed">
+                    {language === "it"
+                      ? "Pylos (noto anche come Pyraos) è un gioco astratto per due giocatori ideato da David G. Royffe nel 1994. L'obiettivo è posizionare per primi la propria ultima sfera in cima alla piramide."
+                      : language === "fr"
+                        ? "Pylos (également connu sous le nom de Pyraos) est un jeu de stratégie abstrait pour deux joueurs conçu par David G. Royffe en 1994. L'objectif est d'être le premier à placer sa dernière bille au sommet de la pyramide."
+                        : language === "de"
+                          ? "Pylos (auch bekannt als Pyraos) ist ein abstraktes Strategiespiel für zwei Spieler, das 1994 von David G. Royffe entworfen wurde. Ziel ist es, als Erster die eigene letzte Kugel auf die Spitze der Pyramide zu setzen."
+                          : language === "es"
+                            ? "Pylos (también conocido como Pyraos) es un juego abstracto para dos jugadores ideado por David G. Royffe en 1994. El objetivo es ser el primero en colocar la propia última esfera en la cima de la pirámide."
+                            : "Pylos (also known as Pyraos) is an abstract strategy game for two players designed by David G. Royffe in 1994. The goal is to be the first to place your final sphere at the apex of the pyramid."}
+                  </p>
+                </div>
+
+                {/* Componenti e Setup */}
+                <div className="bg-slate-800/30 p-4 rounded-xl border border-white/5">
+                  <h3 className="text-lg font-black text-sky-400 mb-3 uppercase">
+                    {language === "it"
+                      ? "Componenti e Setup"
+                      : language === "fr"
+                        ? "Matériel et Mise en Place"
+                        : language === "de"
+                          ? "Spielmaterial & Aufbau"
+                          : language === "es"
+                            ? "Componentes y Preparación"
+                            : "Components & Setup"}
+                  </h3>
+                  <ul className="text-sm text-slate-300 space-y-2 list-disc pl-5">
+                    <li>
+                      <strong className="text-white">
+                        {language === "it" ? "Tabellone:" : language === "fr" ? "Plateau :" : language === "de" ? "Spielbrett:" : language === "es" ? "Tablero:" : "Board:"}
+                      </strong>{" "}
+                      {language === "it"
+                        ? "Una base quadrata con 16 incavi disposti in una griglia 4×4."
+                        : language === "fr"
+                          ? "Une base carrée comprenant 16 encoches disposées en grille 4×4."
+                          : language === "de"
+                            ? "Eine quadratische Basis mit 16 Vertiefungen in einem 4×4-Raster."
+                            : language === "es"
+                              ? "Una base cuadrada con 16 huecos dispuestos en una cuadrícula de 4×4."
+                              : "A square base with 16 indentations arranged in a 4×4 grid."}
+                    </li>
+                    <li>
+                      <strong className="text-white">
+                        {language === "it" ? "Sfere:" : language === "fr" ? "Billes :" : language === "de" ? "Kugeln:" : language === "es" ? "Esferas:" : "Spheres:"}
+                      </strong>{" "}
+                      {language === "it"
+                        ? "30 sfere in totale, divise equamente tra i due giocatori (15 chiare e 15 scure)."
+                        : language === "fr"
+                          ? "30 billes au total, réparties équitablement entre les deux joueurs (15 claires et 15 foncées)."
+                          : language === "de"
+                            ? "Insgesamt 30 Kugeln, gleichmäßig aufgeteilt (15 helle und 15 dunkle)."
+                            : language === "es"
+                              ? "30 esferas en total, repartidas equitativamente entre ambos jugadores (15 claras y 15 oscuras)."
+                              : "30 spheres in total, split evenly between the two players (15 light and 15 dark)."}
+                    </li>
+                    <li>
+                      <strong className="text-white">
+                        {language === "it" ? "Setup iniziale:" : language === "fr" ? "Mise en place initiale :" : language === "de" ? "Startaufstellung:" : language === "es" ? "Preparación inicial:" : "Initial Setup:"}
+                      </strong>{" "}
+                      {language === "it"
+                        ? "Il tabellone inizia completamente vuoto. Ogni giocatore tiene davanti a sé la propria riserva di 15 sfere."
+                        : language === "fr"
+                          ? "Le plateau commence entièrement vide. Chaque joueur conserve devant lui sa réserve de 15 billes."
+                          : language === "de"
+                            ? "Das Brett beginnt völlig leer. Jeder Spieler behält seinen Vorrat von 15 Kugeln vor sich."
+                            : language === "es"
+                              ? "El tablero comienza completamente vacío. Cada jugador mantiene frente a sí su reserva de 15 esferas."
+                              : "The board starts completely empty. Each player keeps their reserve of 15 spheres in front of them."}
+                    </li>
+                  </ul>
+                </div>
+
+                {/* Svolgimento del Turno */}
+                <div className="bg-slate-800/30 p-4 rounded-xl border border-white/5">
+                  <h3 className="text-lg font-black text-sky-400 mb-3 uppercase">
+                    {language === "it"
+                      ? "Svolgimento del Turno"
+                      : language === "fr"
+                        ? "Déroulement d'un Tour"
+                        : language === "de"
+                          ? "Zugablauf"
+                          : language === "es"
+                            ? "Desarrollo del Turno"
+                            : "Turn Sequence"}
+                  </h3>
+                  <p className="text-slate-300 text-sm font-bold mb-3">
+                    {language === "it"
+                      ? "A turno, partendo dal giocatore con le sfere chiare, si esegue una sola delle seguenti due azioni:"
+                      : language === "fr"
+                        ? "À tour de rôle, en commençant par le joueur aux billes claires, on effectue une seule des deux actions suivantes :"
+                        : language === "de"
+                          ? "Abwechselnd (beginnend mit dem hellen Spieler) führt man genau eine der folgenden zwei Aktionen aus:"
+                          : language === "es"
+                            ? "Por turnos, comenzando por el jugador con las esferas claras, se realiza una sola de las siguientes dos acciones:"
+                            : "Taking turns, starting with the player using the light spheres, you perform exactly one of these two actions:"}
+                  </p>
+                  <div className="space-y-4">
+                    <div className="bg-slate-900/50 p-3.5 rounded-xl border border-white/5">
+                      <h4 className="font-bold text-white text-sm mb-1.5">
+                        {language === "it"
+                          ? "1. Posizionare una sfera dalla riserva"
+                          : language === "fr"
+                            ? "1. Placer une bille depuis sa réserve"
+                            : language === "de"
+                              ? "1. Eine Kugel aus dem Vorrat setzen"
+                              : language === "es"
+                                ? "1. Colocar una esfera de la reserva"
+                                : "1. Place a sphere from your reserve"}
+                      </h4>
+                      <p className="text-xs text-slate-300 mb-2">
+                        {language === "it"
+                          ? "Si prende una sfera dalla propria riserva e la si colloca sul tabellone:"
+                          : language === "fr"
+                            ? "Prenez une bille de votre réserve et placez-la sur le plateau :"
+                            : language === "de"
+                              ? "Man nimmt eine Kugel aus dem eigenen Vorrat und legt sie auf das Brett:"
+                              : language === "es"
+                                ? "Se toma una esfera de la propia reserva y se coloca en el tablero:"
+                                : "Take a sphere from your reserve and place it on the board:"}
+                      </p>
+                      <ul className="text-xs text-slate-400 space-y-1.5 list-disc pl-5">
+                        <li>
+                          {language === "it"
+                            ? "In qualsiasi incavo libero del livello base (4×4)."
+                            : language === "fr"
+                              ? "Dans n'importe quelle encoche libre du niveau de base (4×4)."
+                              : language === "de"
+                                ? "In eine beliebige freie Mulde der Basisebene (4×4)."
+                                : language === "es"
+                                  ? "En cualquier hueco libre del nivel base (4×4)."
+                                  : "In any free indentation on the base level (4×4)."}
+                        </li>
+                        <li>
+                          {language === "it"
+                            ? "Oppure sopra un quadrato formato da 4 sfere adiacenti già presenti al livello inferiore (creando così i livelli superiori: 3×3, 2×2 e infine la cima 1×1). Il colore delle 4 sfere sottostanti non ha alcuna importanza."
+                            : language === "fr"
+                              ? "Ou au-dessus d'un carré formé par 4 billes adjacentes du niveau inférieur (créant les niveaux 3×3, 2×2 et enfin le sommet 1×1). La couleur des 4 billes de soutien n'a aucune importance."
+                              : language === "de"
+                                ? "Oder auf ein Quadrat aus 4 angrenzenden Kugeln der unteren Ebene (so entstehen die Ebenen 3×3, 2×2 und schließlich die Spitze 1×1). Die Farbe der 4 darunterliegenden Kugeln spielt keine Rolle."
+                                : language === "es"
+                                  ? "O encima de un cuadrado formado por 4 esferas adyacentes ya presentes en el nivel inferior (creando así los niveles 3×3, 2×2 y finalmente la cima 1×1). El color de las 4 esferas inferiores no importa."
+                                  : "Or on top of a 2×2 square of 4 adjacent spheres on the level below (forming the upper levels: 3×3, 2×2, and finally the 1×1 apex). The colors of the 4 supporting spheres do not matter."}
+                        </li>
+                      </ul>
+                    </div>
+
+                    <div className="bg-slate-900/50 p-3.5 rounded-xl border border-white/5">
+                      <h4 className="font-bold text-white text-sm mb-1.5">
+                        {language === "it"
+                          ? "2. Spostare una propria sfera a un livello superiore"
+                          : language === "fr"
+                            ? "2. Monter l'une de ses billes à un niveau supérieur"
+                            : language === "de"
+                              ? "2. Eine eigene Kugel auf eine höhere Ebene versetzen"
+                              : language === "es"
+                                ? "2. Mover una esfera propia a un nivel superior"
+                                : "2. Raise one of your spheres to a higher level"}
+                      </h4>
+                      <p className="text-xs text-slate-300 leading-relaxed mb-2">
+                        {language === "it"
+                          ? "Invece di usare una sfera dalla riserva, si può prendere una propria sfera già in gioco (purché sia libera, cioè non abbia altre sfere appoggiate sopra) e spostarla su un quadrato di 4 sfere situato a un livello più alto rispetto a quello in cui si trovava."
+                          : language === "fr"
+                            ? "Au lieu d'utiliser la réserve, vous pouvez déplacer l'une de vos billes déjà en jeu (à condition qu'elle soit libre, sans aucune bille posée dessus) vers un carré de 4 billes à un niveau supérieur."
+                            : language === "de"
+                              ? "Statt eine Kugel aus dem Vorrat zu nehmen, darf man eine eigene freie Kugel auf dem Brett (ohne andere Kugeln darauf) auf ein Quadrat aus 4 Kugeln einer höheren Ebene versetzen."
+                              : language === "es"
+                                ? "En lugar de usar una esfera de la reserva, se puede tomar una esfera propia ya en juego (siempre que esté libre, es decir, sin otras esferas apoyadas encima) y moverla a un cuadrado de 4 esferas en un nivel superior."
+                                : "Instead of taking a sphere from your reserve, you may pick up one of your own spheres already on the board (provided it is free, with no spheres resting on top of it) and move it onto a 2×2 square at a higher level."}
+                      </p>
+                      <p className="text-xs text-sky-300 font-semibold leading-relaxed">
+                        {language === "it"
+                          ? "Nota: Questa mossa è fondamentale perché permette di avanzare verso la cima senza consumare la propria riserva."
+                          : language === "fr"
+                            ? "Note : Ce coup est essentiel car il permet de progresser vers le sommet sans dépenser sa réserve."
+                            : language === "de"
+                              ? "Hinweis: Dieser Zug ist entscheidend, um nach oben zu klettern, ohne den eigenen Vorrat zu verbrauchen."
+                              : language === "es"
+                                ? "Nota: Este movimiento es fundamental porque permite avanzar hacia la cima sin consumir tu reserva."
+                                : "Note: This move is essential because it lets you advance toward the top without spending your reserve."}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Regola del Recupero */}
+                <div className="bg-slate-800/30 p-4 rounded-xl border border-amber-500/20">
+                  <h3 className="text-lg font-black text-amber-400 mb-3 uppercase">
+                    {language === "it"
+                      ? "Regola del Recupero (Risparmio Sfere)"
+                      : language === "fr"
+                        ? "Règle de Récupération (Économie de Billes)"
+                        : language === "de"
+                          ? "Rückholregel (Kugeln sparen)"
+                          : language === "es"
+                            ? "Regla de Recuperación (Ahorro de Esferas)"
+                            : "Recovery Rule (Saving Spheres)"}
+                  </h3>
+                  <p className="text-slate-300 text-sm mb-3 leading-relaxed">
+                    {language === "it"
+                      ? "Ogni volta che, con una qualsiasi delle due azioni sopra descritte, un giocatore forma un quadrato 2×2 composto esclusivamente da 4 sfere del proprio colore (su qualsiasi livello orizzontale), attiva immediatamente un bonus:"
+                      : language === "fr"
+                        ? "Chaque fois qu'un joueur forme un carré 2×2 composé uniquement de 4 billes de sa couleur (sur n'importe quel niveau horizontal) via l'une des deux actions ci-dessus, il active un bonus immédiat :"
+                        : language === "de"
+                          ? "Immer wenn ein Spieler durch eine der beiden Aktionen ein 2×2-Quadrat ausschließlich aus 4 eigenen Kugeln auf einer beliebigen horizontalen Ebene bildet, erhält er sofort einen Bonus:"
+                          : language === "es"
+                            ? "Cada vez que un jugador forma un cuadrado de 2×2 compuesto exclusivamente por 4 esferas de su color (en cualquier nivel horizontal) mediante cualquiera de las dos acciones, activa un bono inmediato:"
+                            : "Whenever a player forms a 2×2 square made exclusively of 4 spheres of their own color (on any horizontal level) with either action, they immediately trigger a bonus:"}
+                  </p>
+                  <ul className="text-xs text-slate-300 space-y-2 list-disc pl-5 mb-3">
+                    <li>
+                      {language === "it"
+                        ? "Può riprendere nella propria riserva 1 o 2 sfere del proprio colore presenti sul tabellone (inclusa, volendo, quella appena giocata)."
+                        : language === "fr"
+                          ? "Il peut reprendre dans sa réserve 1 ou 2 billes de sa couleur présentes sur le plateau (y compris celle qu'il vient de jouer)."
+                          : language === "de"
+                            ? "Er darf 1 oder 2 eigene Kugeln vom Brett (einschließlich der gerade gespielten) zurück in seinen Vorrat nehmen."
+                            : language === "es"
+                              ? "Puede recuperar en su reserva 1 o 2 esferas de su color presentes en el tablero (incluida, si lo desea, la que acaba de jugar)."
+                              : "They may take 1 or 2 of their own spheres from the board back into their reserve (including, if desired, the one just played)."}
+                    </li>
+                    <li>
+                      {language === "it"
+                        ? "È possibile recuperare solo sfere libere (che non sostengano altre sfere dei livelli superiori)."
+                        : language === "fr"
+                          ? "Seules les billes libres (ne soutenant aucune bille au-dessus) peuvent être récupérées."
+                          : language === "de"
+                            ? "Es dürfen nur freie Kugeln zurückgenommen werden (die keine darüberliegenden Kugeln tragen)."
+                            : language === "es"
+                              ? "Solo se pueden recuperar esferas libres (que no sostengan otras esferas de niveles superiores)."
+                              : "Only free spheres (not supporting any spheres on upper levels) may be recovered."}
+                    </li>
+                    <li>
+                      {language === "it"
+                        ? "Il recupero è facoltativo, ma quasi sempre indispensabile per non rimanere a corto di sfere prima della fine."
+                        : language === "fr"
+                          ? "La récupération est facultative, mais presque toujours indispensable pour ne pas manquer de billes avant la fin."
+                          : language === "de"
+                            ? "Das Zurücknehmen ist freiwillig, aber fast immer unverzichtbar, um vor dem Ende nicht ohne Kugeln dazustehen."
+                            : language === "es"
+                              ? "La recuperación es opcional, pero casi siempre indispensable para no quedarse sin esferas antes del final."
+                              : "Recovery is optional, though almost always vital so you do not run out of spheres before the end."}
+                    </li>
+                  </ul>
+                  <div className="bg-amber-500/10 border border-amber-400/20 rounded-xl p-3 text-xs text-amber-200/90 leading-relaxed">
+                    {language === "it"
+                      ? '(Nelle varianti per giocatori esperti, esiste anche la regola della "linea": formare una fila orizzontale di 4 sfere del proprio colore sul livello base o di 3 sfere sul secondo livello permette anch\'essa di recuperare 1 o 2 sfere).'
+                      : language === "fr"
+                        ? '(Dans les variantes avancées, la règle de la « ligne » existe aussi : former un alignement horizontal de 4 billes sur la base ou 3 billes au deuxième niveau permet également de récupérer 1 ou 2 billes.)'
+                        : language === "de"
+                          ? '(In der Expertenvariante gilt zusätzlich die „Linienregel“: Eine waagerechte Reihe aus 4 eigenen Kugeln auf der Basis oder 3 auf der zweiten Ebene erlaubt ebenfalls das Zurückholen von 1–2 Kugeln.)'
+                          : language === "es"
+                            ? '(En variantes para expertos también existe la regla de la "línea": formar una fila horizontal de 4 esferas en la base o de 3 esferas en el segundo nivel permite igualmente recuperar 1 o 2 esferas.)'
+                            : '(In advanced variants, the "line" rule also exists: forming a horizontal line of 4 matching spheres on the base level or 3 on the second level likewise lets you recover 1 or 2 spheres.)'}
+                  </div>
+                </div>
+
+                {/* Fine della Partita e Vittoria */}
+                <div className="bg-slate-800/30 p-4 rounded-xl border border-emerald-500/20">
+                  <h3 className="text-lg font-black text-emerald-400 mb-3 uppercase">
+                    {language === "it"
+                      ? "Fine della Partita e Vittoria"
+                      : language === "fr"
+                        ? "Fin de Partie et Victoire"
+                        : language === "de"
+                          ? "Spielende & Sieg"
+                          : language === "es"
+                            ? "Fin de la Partida y Victoria"
+                            : "End of Game & Victory"}
+                  </h3>
+                  <ul className="text-sm text-slate-300 space-y-2 list-disc pl-5 leading-relaxed">
+                    <li>
+                      {language === "it"
+                        ? "Vince il giocatore che riesce a posizionare la trentesima e ultima sfera sulla cima della piramide (4° livello)."
+                        : language === "fr"
+                          ? "Le joueur qui réussit à poser la trentième et dernière bille tout au sommet de la pyramide (4e niveau) remporte la partie."
+                          : language === "de"
+                            ? "Es gewinnt der Spieler, der die dreißigste und letzte Kugel auf die Spitze der Pyramide (4. Ebene) setzt."
+                            : language === "es"
+                              ? "Gana el jugador que consigue colocar la trigésima y última esfera en la cima de la pirámide (4.º nivel)."
+                              : "The player who places the 30th and final sphere onto the top of the pyramid (4th level) wins."}
+                    </li>
+                    <li>
+                      {language === "it"
+                        ? "Poiché le sfere totali sono esattamente 30 (tante quanti sono i posti della piramide: 16 + 9 + 4 + 1 = 30), chi esaurisce in anticipo la propria riserva non può più effettuare mosse: l'avversario continuerà a posizionare le proprie sfere rimanenti fino a completare la piramide e vincere automaticamente."
+                        : language === "fr"
+                          ? "Comme il y a exactement 30 billes au total (autant que d'emplacements : 16 + 9 + 4 + 1 = 30), le joueur qui épuise sa réserve en premier ne peut plus jouer : son adversaire place alors ses billes restantes pour achever la pyramide et gagner automatiquement."
+                          : language === "de"
+                            ? "Da es genau 30 Kugeln gibt (passend zu allen Plätzen: 16 + 9 + 4 + 1 = 30), kann derjenige, dessen Vorrat zuerst leer ist, nicht mehr ziehen; der Gegner setzt seine übrigen Kugeln, vollendet die Pyramide und gewinnt automatisch."
+                            : language === "es"
+                              ? "Como hay exactamente 30 esferas en total (tantas como huecos en la pirámide: 16 + 9 + 4 + 1 = 30), quien agota antes su reserva no puede hacer más movimientos: su adversario seguirá colocando sus esferas restantes hasta completar la pirámide y ganar automáticamente."
+                              : "Because there are exactly 30 spheres in total (matching every spot in the pyramid: 16 + 9 + 4 + 1 = 30), whoever runs out of their reserve first can no longer make moves: the opponent simply places their remaining spheres to finish the pyramid and wins automatically."}
+                    </li>
+                  </ul>
+                </div>
+              </div>
+
+              <div className="mt-8 flex justify-center pb-2">
+                <a
+                  href="https://www.youtube.com/results?search_query=how+to+play+pylos+board+game"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="bg-red-600/10 w-full hover:bg-red-600/20 border border-red-500/30 text-red-100/90 py-4 rounded-2xl flex items-center justify-center gap-3 font-bold transition-all active:scale-95 shadow-lg shadow-red-900/20"
+                >
+                  <svg className="w-6 h-6 text-red-500 shadow-sm" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.5 12 3.5 12 3.5s-7.505 0-9.377.55a3.016 3.016 0 0 0-2.122 2.136C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.55 9.376.55 9.376.55s7.505 0 9.377-.55a3.016 3.016 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" />
+                  </svg>
+                  <span>{t.searchTutorialVideo}</span>
+                </a>
+              </div>
+
+              <button
+                onClick={() => {
+                  setIsPylosRulesOpen(false);
+                  setHistoryMode("pylos");
+                  setIsHistoryOpen(true);
+                }}
+                className="w-full mt-8 py-3 bg-slate-800 rounded-2xl font-black text-sm text-sky-400 border border-sky-500/30 hover:bg-slate-700 transition-colors active:scale-95 flex items-center justify-center gap-2"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                </svg>
+                {language === "it"
+                  ? "STORIA / CURIOSITÀ"
+                  : language === "fr"
+                    ? "HISTOIRE / ANECDOTES"
+                    : language === "de"
+                      ? "GESCHICHTE / TRIVIA"
+                      : language === "es"
+                        ? "HISTORIA / CURIOSIDADES"
+                        : "HISTORY / TRIVIA"}
+              </button>
+
+              <button
+                onClick={() => setIsPylosRulesOpen(false)}
+                className="w-full mt-6 py-4 bg-sky-900/30 text-sky-300 rounded-xl font-black text-base uppercase tracking-wider shadow-lg active:scale-95 transition-transform hover:bg-sky-900/50 border border-sky-500/30"
+              >
+                {language === "it"
+                  ? "CHIUDI"
+                  : language === "fr"
+                    ? "FERMER"
+                    : language === "de"
+                      ? "SCHLIESSEN"
+                      : language === "es"
+                        ? "CERRAR"
+                        : "CLOSE"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {isPrivacyOpen && (
         <div className="fixed inset-0 z-[2000] bg-black/85 backdrop-blur-md flex items-center justify-center p-2">
           <div className="w-full max-w-xl bg-slate-900 rounded-[2.5rem] p-6 flex flex-col max-h-[95vh] animate-in slide-in-from-bottom duration-300 shadow-2xl overflow-y-auto border border-white/10">
@@ -13609,8 +16588,7 @@ useEffect(() => {
             <button
               onClick={() => {
                 setIsPrivacyOpen(false);
-                setSettingsTab("general");
-                setIsSettingsOpen(true);
+                setIsAppSettingsOpen(true);
               }}
               className="w-full mt-8 py-4 bg-slate-800 text-white rounded-xl font-black text-base uppercase tracking-wider shadow-lg active:scale-95 transition-transform hover:bg-slate-700 border border-white/5"
             >
@@ -13717,7 +16695,11 @@ useEffect(() => {
       )}
 
       {isAdminStatsOpen && (
-        <AdminStatsModal onClose={() => setIsAdminStatsOpen(false)} />
+        <AdminStatsModal
+          onClose={() => setIsAdminStatsOpen(false)}
+          requirePointsToUnlock={requirePointsToUnlock}
+          onToggleRequirePointsToUnlock={handleToggleRequirePointsToUnlock}
+        />
       )}
 
       {dailyMissions && (
@@ -14040,7 +17022,7 @@ useEffect(() => {
                   corsa: "Quoridor", dominio: "Wall Go AI", fuga: "Fuga", battaglia: "Battaglia",
                   abalone: "Abalone", pente: "Pente", domineering: "Domineering", orbito: "Orbito",
                   shobu: "Shōbu", yinsh: "YINSH", baduk: "Baduk (Go)", onitama: "Onitama",
-                  chain_triangle: "Chain Triangle", amazons: "Amazons", stratego: "Stratego"
+                  chain_triangle: "Chain Triangle", amazons: "Amazons", stratego: "Stratego", quarto: "Quarto", pylos: "Pylos"
                 };
                 return modeLabels[pendingSavedGameInfo.mode] || pendingSavedGameInfo.mode;
               })()}
@@ -14101,7 +17083,7 @@ useEffect(() => {
       </div>
 
       {/* PC RIGHT PANEL: Leaderboards (Classifiche) & Stats */}
-      <div className="hidden lg:flex w-80 xl:w-96 shrink-0 h-full flex-col bg-slate-900/80 rounded-[2.5rem] border border-white/10 p-4 sm:p-5 overflow-hidden shadow-2xl backdrop-blur-xl">
+      <div className={`hidden sm:flex ${gameMode === "stratego" && gameState.status === "playing" ? "sm:w-40 md:w-48 lg:w-64 xl:w-80 2xl:w-96" : "sm:w-44 md:w-56 lg:w-72 xl:w-80 2xl:w-96"} shrink-0 h-full flex-col bg-slate-900/80 rounded-3xl lg:rounded-[2.5rem] border border-white/10 p-3 md:p-4 lg:p-5 overflow-hidden shadow-2xl backdrop-blur-xl`}>
         <LeaderboardModal
           isInline={true}
           language={language}

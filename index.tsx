@@ -1,5 +1,6 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
+import { Capacitor } from '@capacitor/core';
 import App from './App';
 import './index.css';
 
@@ -34,6 +35,38 @@ const originalJSONParse = JSON.parse;
 declare global {
   interface Window {
     bridge?: any;
+    Capacitor?: any;
+  }
+}
+
+// On native Android (Capacitor), assets are bundled locally inside the APK/AAB.
+// Never register a PWA Service Worker on native, and purge any stale SW/CacheStorage from older builds.
+if (typeof window !== 'undefined') {
+  if (Capacitor.isNativePlatform()) {
+    const cleanupNativeSW = async () => {
+      try {
+        const hadController = Boolean(navigator.serviceWorker?.controller);
+        if ('serviceWorker' in navigator) {
+          const registrations = await navigator.serviceWorker.getRegistrations();
+          await Promise.all(registrations.map((reg) => reg.unregister()));
+        }
+        if ('caches' in window) {
+          const keys = await caches.keys();
+          await Promise.all(keys.map((key) => caches.delete(key)));
+        }
+        if (hadController && !sessionStorage.getItem('wallgo_sw_purged')) {
+          sessionStorage.setItem('wallgo_sw_purged', '1');
+          window.location.reload();
+        }
+      } catch {
+        // Ignore cleanup errors on restricted WebViews
+      }
+    };
+    cleanupNativeSW();
+  } else if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('./sw.js', { scope: './' }).catch(() => {});
+    });
   }
 }
 

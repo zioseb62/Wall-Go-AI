@@ -1,22 +1,21 @@
 {
   "name": "wall-go-ai",
   "private": true,
-  "version": "2.21.10",
+  "version": "2.21.70",
   "main": "dist/server.cjs",
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
     "start": "node dist/server.cjs",
-    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
+    "build": "node generate-icons.cjs && vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs && npx cap copy android",
     "preview": "vite preview",
     "lint": "tsc --noEmit",
     "cap:init": "npx cap init \"Wall Go AI\" com.wallgo.ai.game --web-dir dist",
     "cap:add-android": "npx cap add android",
-    "cap:sync": "npm run build && npx cap sync",
+    "cap:sync": "npm run clean && npm run build && npx cap sync android",
     "cap:open-android": "npx cap open android",
     "clean": "rimraf dist android/app/build",
-    "generate-icons": "node generate-icons.cjs",
-    "postinstall": "node generate-icons.cjs"
+    "generate-icons": "node generate-icons.cjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.3.4",

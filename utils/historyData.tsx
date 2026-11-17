@@ -3135,5 +3135,381 @@ export const historyData: Record<string, Partial<Record<Language, React.ReactNod
         </div>
       </div>
     )
+  },
+  quarto: {
+    it: (
+      <div className="space-y-6">
+        <div className="bg-slate-800/50 p-4 rounded-2xl border border-white/5">
+          <h3 className="text-sm font-black text-indigo-400 uppercase mb-2 tracking-wider">1. L'Intuizione di Blaise Müller (1991)</h3>
+          <p className="text-sm font-bold text-slate-300 leading-relaxed mb-4">
+            <span className="text-white">Il Genio Matematico:</span> Quarto è stato inventato nel 1991 dal matematico svizzero <strong className="text-indigo-300">Blaise Müller</strong> e pubblicato dall'editore francese <strong>Gigamic</strong>.
+          </p>
+          <p className="text-sm font-bold text-slate-300 leading-relaxed">
+            <span className="text-white">La Rivoluzione del "Pezzo Scelto dall'Avversario":</span> Nei tradizionali giochi di allineamento (come il Tris o Forza 4), ogni giocatore possiede i propri pezzi. In Quarto i 16 pezzi sono condivisi (<em>gioco imparziale</em>) e sei costretto a consegnare al rivale il pezzo che dovrà piazzare: ogni sconfitta nasce letteralmente dalle tue stesse mani!
+          </p>
+        </div>
+        <div className="bg-slate-800/50 p-4 rounded-2xl border border-white/5">
+          <h3 className="text-sm font-black text-indigo-400 uppercase mb-2 tracking-wider">2. L'Ipercubo 4D sulla Scacchiera</h3>
+          <p className="text-sm font-bold text-slate-300 leading-relaxed mb-4">
+            <span className="text-white">4 Attributi Binari (2⁴ = 16):</span> I 16 pezzi incarnano fisicamente i vertici di un ipercubo quadridimensionale (tesseract), dove ogni dimensione rappresenta una proprietà binaria: Chiaro/Scuro, Alto/Basso, Tondo/Quadrato, Forato/Pieno.
+          </p>
+          <p className="text-sm font-bold text-slate-300 leading-relaxed">
+            <span className="text-white">Cecità Percettiva:</span> Il cervello umano fatica a monitorare simultaneamente 4 attributi ortogonali su 10 linee (4 righe, 4 colonne, 2 diagonali). Spesso ci si concentra sul colore o sull'altezza dimenticando che tre pezzi sulla diagonale sono tutti forati!
+          </p>
+        </div>
+        <div className="bg-slate-800/50 p-4 rounded-2xl border border-white/5">
+          <h3 className="text-sm font-black text-indigo-400 uppercase mb-2 tracking-wider">3. Premi Internazionali e Soluzione Matematica</h3>
+          <ul className="list-disc pl-5 text-sm font-bold text-slate-300 leading-relaxed space-y-4">
+            <li>
+              <span className="text-white block mb-1">Palmarès da Record:</span> Quarto è uno dei giochi astratti più premiati della storia moderna, vincitore del <em>Dé d'Or des Créateurs de Jeux</em> a Parigi (1985, prototipo), <em>Mensa Select Top 5 Best Games</em> (USA, 1993), <em>As d'Or</em> a Cannes e <em>Spiel des Jahres</em> (sezione speciale).
+            </li>
+            <li>
+              <span className="text-white block mb-1">Risolto al Computer (1998):</span> Il matematico Luc Goossens ha dimostrato tramite analisi retrograda completa che, a gioco perfetto da parte di entrambi, una partita di Quarto termina sempre in <strong>pareggio</strong>.
+            </li>
+          </ul>
+        </div>
+      </div>
+    ),
+    en: (
+      <div className="space-y-6">
+        <div className="bg-slate-800/50 p-4 rounded-2xl border border-white/5">
+          <h3 className="text-sm font-black text-indigo-400 uppercase mb-2 tracking-wider">1. Blaise Müller's Masterpiece (1991)</h3>
+          <p className="text-sm font-bold text-slate-300 leading-relaxed mb-4">
+            <span className="text-white">Mathematical Elegance:</span> Quarto was invented in 1991 by Swiss mathematician <strong className="text-indigo-300">Blaise Müller</strong> and published worldwide by the French publisher <strong>Gigamic</strong>.
+          </p>
+          <p className="text-sm font-bold text-slate-300 leading-relaxed">
+            <span className="text-white">The "Opponent Chooses Your Piece" Revolution:</span> In traditional alignment games (such as Tic-Tac-Toe or Connect Four), each player owns their own pieces. In Quarto, all 16 pieces are shared (an <em>impartial game</em>) and you are forced to hand your rival the exact piece they must place next—meaning every defeat is literally handed over by your own hands!
+          </p>
+        </div>
+        <div className="bg-slate-800/50 p-4 rounded-2xl border border-white/5">
+          <h3 className="text-sm font-black text-indigo-400 uppercase mb-2 tracking-wider">2. A 4D Hypercube on the Board</h3>
+          <p className="text-sm font-bold text-slate-300 leading-relaxed mb-4">
+            <span className="text-white">4 Binary Attributes (2⁴ = 16):</span> The 16 pieces physically embody the vertices of a four-dimensional hypercube (tesseract), where each dimension represents a binary property: Light/Dark, Tall/Short, Round/Square, Hollow/Solid.
+          </p>
+          <p className="text-sm font-bold text-slate-300 leading-relaxed">
+            <span className="text-white">Perceptual Blindness:</span> The human brain struggles to simultaneously monitor 4 orthogonal attributes across 10 lines (4 rows, 4 columns, 2 diagonals). Players often focus on color or height while overlooking that three pieces on a diagonal are all hollow!
+          </p>
+        </div>
+        <div className="bg-slate-800/50 p-4 rounded-2xl border border-white/5">
+          <h3 className="text-sm font-black text-indigo-400 uppercase mb-2 tracking-wider">3. International Awards &amp; Mathematical Solution</h3>
+          <ul className="list-disc pl-5 text-sm font-bold text-slate-300 leading-relaxed space-y-4">
+            <li>
+              <span className="text-white block mb-1">Record-Breaking Trophy Cabinet:</span> Quarto is one of the most awarded abstract strategy games in modern history, winning the <em>Dé d'Or des Créateurs de Jeux</em> in Paris (1985 prototype), <em>Mensa Select Top 5 Best Games</em> (USA, 1993), <em>As d'Or</em> in Cannes, and the <em>Spiel des Jahres</em> special award.
+            </li>
+            <li>
+              <span className="text-white block mb-1">Solved by Computer (1998):</span> Mathematician Luc Goossens proved through complete retrograde analysis that, with perfect play from both sides, a game of Quarto always ends in a <strong>draw</strong>.
+            </li>
+          </ul>
+        </div>
+      </div>
+    ),
+    fr: (
+      <div className="space-y-6">
+        <div className="bg-slate-800/50 p-4 rounded-2xl border border-white/5">
+          <h3 className="text-sm font-black text-indigo-400 uppercase mb-2 tracking-wider">1. L'Intuition de Blaise Müller (1991)</h3>
+          <p className="text-sm font-bold text-slate-300 leading-relaxed mb-4">
+            <span className="text-white">Le Génie Mathématique :</span> Quarto a été inventé en 1991 par le mathématicien suisse <strong className="text-indigo-300">Blaise Müller</strong> et édité par la maison française <strong>Gigamic</strong>.
+          </p>
+          <p className="text-sm font-bold text-slate-300 leading-relaxed">
+            <span className="text-white">La Révolution de la « Pièce Choisie par l'Adversaire » :</span> Dans les jeux d'alignement classiques (comme le Morpion ou Puissance 4), chaque joueur possède ses propres pions. Dans Quarto, les 16 pièces sont communes (<em>jeu impartial</em>) et vous devez donner à votre adversaire la pièce qu'il devra poser : chaque défaite naît littéralement de votre propre choix !
+          </p>
+        </div>
+        <div className="bg-slate-800/50 p-4 rounded-2xl border border-white/5">
+          <h3 className="text-sm font-black text-indigo-400 uppercase mb-2 tracking-wider">2. L'Hypercube 4D sur le Plateau</h3>
+          <p className="text-sm font-bold text-slate-300 leading-relaxed mb-4">
+            <span className="text-white">4 Attributs Binaires (2⁴ = 16) :</span> Les 16 pièces incarnent physiquement les sommets d'un hypercube à quatre dimensions (tesseract), où chaque dimension correspond à une propriété binaire : Clair/Foncé, Grand/Petit, Rond/Carré, Creux/Plein.
+          </p>
+          <p className="text-sm font-bold text-slate-300 leading-relaxed">
+            <span className="text-white">Cécité Perceptive :</span> Le cerveau humain peine à surveiller simultanément 4 attributs orthogonaux sur 10 lignes (4 rangées, 4 colonnes, 2 diagonales). On se concentre souvent sur la couleur ou la taille en oubliant que trois pièces sur la diagonale sont toutes creuses !
+          </p>
+        </div>
+        <div className="bg-slate-800/50 p-4 rounded-2xl border border-white/5">
+          <h3 className="text-sm font-black text-indigo-400 uppercase mb-2 tracking-wider">3. Prix Internationaux et Solution Mathématique</h3>
+          <ul className="list-disc pl-5 text-sm font-bold text-slate-300 leading-relaxed space-y-4">
+            <li>
+              <span className="text-white block mb-1">Un Palmarès Record :</span> Quarto est l'un des jeux abstraits les plus primés de l'histoire moderne, lauréat du <em>Dé d'Or des Créateurs de Jeux</em> à Paris (1985), du <em>Mensa Select Top 5 Best Games</em> (États-Unis, 1993), de l'<em>As d'Or</em> à Cannes et distingué au <em>Spiel des Jahres</em>.
+            </li>
+            <li>
+              <span className="text-white block mb-1">Résolu par Ordinateur (1998) :</span> Le mathématicien Luc Goossens a démontré par analyse rétrograde complète qu'en cas de jeu parfait des deux côtés, une partie de Quarto se solde toujours par un <strong>match nul</strong>.
+            </li>
+          </ul>
+        </div>
+      </div>
+    ),
+    de: (
+      <div className="space-y-6">
+        <div className="bg-slate-800/50 p-4 rounded-2xl border border-white/5">
+          <h3 className="text-sm font-black text-indigo-400 uppercase mb-2 tracking-wider">1. Der Geniestreich von Blaise Müller (1991)</h3>
+          <p className="text-sm font-bold text-slate-300 leading-relaxed mb-4">
+            <span className="text-white">Mathematische Eleganz:</span> Quarto wurde 1991 vom Schweizer Mathematiker <strong className="text-indigo-300">Blaise Müller</strong> erfunden und vom französischen Verlag <strong>Gigamic</strong> veröffentlicht.
+          </p>
+          <p className="text-sm font-bold text-slate-300 leading-relaxed">
+            <span className="text-white">Die Revolution „Der Gegner wählt deine Figur“:</span> In klassischen Reihenspielen (wie Tic-Tac-Toe oder Vier Gewinnt) besitzt jeder Spieler eigene Steine. Bei Quarto gehören alle 16 Figuren beiden Spielern gemeinsam (<em>unparteiisches Spiel</em>), und man übergibt dem Gegner genau die Figur, die er setzen muss – jede Niederlage wird buchstäblich aus eigener Hand überreicht!
+          </p>
+        </div>
+        <div className="bg-slate-800/50 p-4 rounded-2xl border border-white/5">
+          <h3 className="text-sm font-black text-indigo-400 uppercase mb-2 tracking-wider">2. Ein 4D-Hyperwürfel auf dem Spielbrett</h3>
+          <p className="text-sm font-bold text-slate-300 leading-relaxed mb-4">
+            <span className="text-white">4 Binäre Eigenschaften (2⁴ = 16):</span> Die 16 Figuren verkörpern physisch die Eckpunkte eines vierdimensionalen Hyperwürfels (Tesserakt), wobei jede Dimension für ein binäres Merkmal steht: Hell/Dunkel, Groß/Klein, Rund/Eckig, Hohl/Massiv.
+          </p>
+          <p className="text-sm font-bold text-slate-300 leading-relaxed">
+            <span className="text-white">Wahrnehmungsblindheit:</span> Das menschliche Gehirn tut sich schwer, 4 unabhängige Merkmale auf 10 Linien (4 Reihen, 4 Spalten, 2 Diagonalen) gleichzeitig zu überwachen. Oft achtet man auf Farbe oder Höhe und übersieht, dass drei Figuren auf der Diagonale alle hohl sind!
+          </p>
+        </div>
+        <div className="bg-slate-800/50 p-4 rounded-2xl border border-white/5">
+          <h3 className="text-sm font-black text-indigo-400 uppercase mb-2 tracking-wider">3. Internationale Preise &amp; Mathematische Lösung</h3>
+          <ul className="list-disc pl-5 text-sm font-bold text-slate-300 leading-relaxed space-y-4">
+            <li>
+              <span className="text-white block mb-1">Preisgekrönter Klassiker:</span> Quarto zählt zu den meistprämierten abstrakten Spielen der Moderne – ausgezeichnet u. a. mit dem <em>Dé d'Or</em> in Paris (1985), <em>Mensa Select Top 5</em> (USA, 1993), <em>As d'Or</em> in Cannes sowie auf der Auswahlliste zum <em>Spiel des Jahres</em>.
+            </li>
+            <li>
+              <span className="text-white block mb-1">Vom Computer gelöst (1998):</span> Der Mathematiker Luc Goossens bewies durch vollständige retrograde Analyse, dass eine Partie Quarto bei perfektem Spiel beider Seiten immer <strong>unentschieden</strong> endet.
+            </li>
+          </ul>
+        </div>
+      </div>
+    ),
+    es: (
+      <div className="space-y-6">
+        <div className="bg-slate-800/50 p-4 rounded-2xl border border-white/5">
+          <h3 className="text-sm font-black text-indigo-400 uppercase mb-2 tracking-wider">1. La Intuición de Blaise Müller (1991)</h3>
+          <p className="text-sm font-bold text-slate-300 leading-relaxed mb-4">
+            <span className="text-white">El Genio Matemático:</span> Quarto fue inventado en 1991 por el matemático suizo <strong className="text-indigo-300">Blaise Müller</strong> y publicado por la editorial francesa <strong>Gigamic</strong>.
+          </p>
+          <p className="text-sm font-bold text-slate-300 leading-relaxed">
+            <span className="text-white">La Revolución de la «Pieza Elegida por el Rival»:</span> En los juegos de alineación tradicionales (como el Tres en Raya o Conecta 4), cada jugador tiene sus propias fichas. En Quarto, las 16 piezas son compartidas (<em>juego imparcial</em>) y estás obligado a entregar a tu oponente la pieza que deberá colocar: ¡cada derrota nace literalmente de tus propias manos!
+          </p>
+        </div>
+        <div className="bg-slate-800/50 p-4 rounded-2xl border border-white/5">
+          <h3 className="text-sm font-black text-indigo-400 uppercase mb-2 tracking-wider">2. El Hipercubo 4D en el Tablero</h3>
+          <p className="text-sm font-bold text-slate-300 leading-relaxed mb-4">
+            <span className="text-white">4 Atributos Binarios (2⁴ = 16):</span> Las 16 piezas encarnan físicamente los vértices de un hipercubo de cuatro dimensiones (teseracto), donde cada dimensión representa una propiedad binaria: Clara/Oscura, Alta/Baja, Cilíndrica/Cuadrada, Hueca/Sólida.
+          </p>
+          <p className="text-sm font-bold text-slate-300 leading-relaxed">
+            <span className="text-white">Ceguera Perceptiva:</span> Al cerebro humano le cuesta vigilar simultáneamente 4 atributos ortogonales en 10 líneas (4 filas, 4 columnas y 2 diagonales). ¡A menudo nos concentramos en el color o la altura olvidando que tres piezas en la diagonal son todas huecas!
+          </p>
+        </div>
+        <div className="bg-slate-800/50 p-4 rounded-2xl border border-white/5">
+          <h3 className="text-sm font-black text-indigo-400 uppercase mb-2 tracking-wider">3. Premios Internacionales y Solución Matemática</h3>
+          <ul className="list-disc pl-5 text-sm font-bold text-slate-300 leading-relaxed space-y-4">
+            <li>
+              <span className="text-white block mb-1">Palmarés de Récord:</span> Quarto es uno de los juegos abstractos más premiados de la historia moderna, ganador del <em>Dé d'Or des Créateurs de Jeux</em> en París (1985), <em>Mensa Select Top 5 Best Games</em> (EE. UU., 1993), <em>As d'Or</em> en Cannes y mención especial en el <em>Spiel des Jahres</em>.
+            </li>
+            <li>
+              <span className="text-white block mb-1">Resuelto por Ordenador (1998):</span> El matemático Luc Goossens demostró mediante análisis retrógrado completo que, con un juego perfecto por parte de ambos jugadores, una partida de Quarto termina siempre en <strong>empate</strong>.
+            </li>
+          </ul>
+        </div>
+      </div>
+    )
+  },
+  pylos: {
+    it: (
+      <div className="space-y-6">
+        <div className="bg-slate-800/50 p-4 rounded-2xl border border-white/5">
+          <p className="text-sm font-bold text-slate-300 leading-relaxed">
+            <strong className="text-sky-300">Pylos</strong> nasce dall'intuizione di <strong className="text-white">David G. Royffe</strong>, un ingegnere inglese appassionato di geometria e matematica ricreativa, all'inizio degli anni '90. A differenza di molti autori di giochi da tavolo provenienti dal mondo ludico tradizionale, Royffe progettò Pylos partendo da un problema di <strong className="text-white">impilamento sferico (sphere packing)</strong> tridimensionale.
+          </p>
+        </div>
+
+        <div className="bg-slate-800/50 p-4 rounded-2xl border border-white/5">
+          <h3 className="text-sm font-black text-sky-400 uppercase mb-3 tracking-wider">La nascita e l'incontro con Gigamic</h3>
+          <ul className="list-disc pl-5 text-sm font-bold text-slate-300 leading-relaxed space-y-4">
+            <li>
+              <span className="text-white block mb-1">L'ispirazione matematica (1992-1993):</span>
+              Royffe era affascinato dalla proprietà geometrica delle sfere impilate a base quadrata (i cosiddetti <strong className="text-sky-300">numeri piramidali quadrati: 1² + 2² + 3² + 4² = 30</strong>). La sua sfida iniziale non era creare un gioco di cattura, bensì un sistema chiuso in cui il numero esatto dei pezzi coincidesse con il volume della struttura finale, trasformando la semplice costruzione in una gara di "risparmio" e riciclo delle risorse.
+            </li>
+            <li>
+              <span className="text-white block mb-1">Il debutto con Gigamic (1994):</span>
+              All'epoca, l'editore francese <strong className="text-white">Gigamic</strong> aveva appena ottenuto un successo clamoroso con <em>Quarto!</em> (pubblicato nel 1991, ideato da Blaise Müller) ed era alla ricerca di un secondo titolo per inaugurare una vera e propria collana di giochi astratti in legno dal design minimale ed elegante. Royffe presentò il suo prototipo e Gigamic lo pubblicò nel 1994, consacrandolo immediatamente come uno dei pilastri del proprio catalogo.
+            </li>
+          </ul>
+        </div>
+
+        <div className="bg-slate-800/50 p-4 rounded-2xl border border-white/5">
+          <h3 className="text-sm font-black text-sky-400 uppercase mb-3 tracking-wider">Curiosità e aneddoti</h3>
+          <ul className="list-disc pl-5 text-sm font-bold text-slate-300 leading-relaxed space-y-4">
+            <li>
+              <span className="text-white block mb-1">Il mistero del doppio nome (Pylos vs. Pyraos):</span>
+              Negli anni '90, per motivi di registrazione del marchio (<em>trademark</em>) in alcuni mercati anglosassoni, il gioco fu commercializzato con il nome <strong className="text-white">Pyraos</strong> (un evidente richiamo a <em>Pyramid</em> e al caos/ordine). Nel resto d'Europa e nelle edizioni successive si impose definitivamente <strong className="text-white">Pylos</strong>, scelto per la sua sonorità greca antica che evocava monumenti e architetture classiche, pur non avendo alcun legame storico con la città greca di Pilo.
+            </li>
+            <li>
+              <span className="text-white block mb-1">L'arte del "togliere" invece che "aggiungere":</span>
+              Nei primi prototipi di Royffe, il gioco risultava troppo corto e prevedibile: chi riusciva a fare anche un solo quadrato di vantaggio vinceva quasi sempre. L'introduzione della <strong className="text-sky-300">regola di elevazione</strong> (spostare una sfera già sul tabellone a un livello superiore senza pescare dalla riserva) fu la svolta progettuale che rese Pylos profondamente tattico, creando il paradosso per cui per avanzare verso l'alto bisogna prima svuotare la base.
+            </li>
+            <li>
+              <span className="text-white block mb-1">Un oggetto d'arredo:</span>
+              Come <em>Quarto!</em> e <em>Quoridor</em>, Pylos fu pensato da Gigamic non solo come gioco, ma come scultura da salotto. Le edizioni classiche in legno di faggio massello, con sfere tornite e levigate in due tonalità naturali (legno chiaro e legno tinto noce/ebano), gli valsero numerosi riconoscimenti internazionali, tra cui il prestigioso <strong className="text-amber-300">Mensa Select</strong> negli Stati Uniti (1994) e il <strong className="text-amber-300">Parent's Choice Gold Award</strong>.
+            </li>
+            <li>
+              <span className="text-white block mb-1">La variante "Mini" e "Travel":</span>
+              Dato il successo nei caffè e nei club scacchistici europei, Gigamic realizzò anche delle versioni ridotte e da viaggio. Tuttavia, i giocatori puristi hanno sempre preferito la versione standard grande: il peso delle sfere in legno massello e il rumore sordo che producono quando si incastrano negli incavi dei livelli superiori sono considerati parte integrante dell'esperienza sensoriale del gioco.
+            </li>
+            <li>
+              <span className="text-white block mb-1">Parentela con altri astratti piramidali:</span>
+              Pylos ha ispirato diversi discendenti spirituali nel mondo degli astratti 3D, tra cui <em>Kulami</em> (basato su biglie e tessere modulari) e <em>Pueblo</em>, pur rimanendo l'unico a mantenere una simmetria perfetta tra numero di pezzi, livelli e regola di riciclo.
+            </li>
+          </ul>
+        </div>
+      </div>
+    ),
+    en: (
+      <div className="space-y-6">
+        <div className="bg-slate-800/50 p-4 rounded-2xl border border-white/5">
+          <p className="text-sm font-bold text-slate-300 leading-relaxed">
+            <strong className="text-sky-300">Pylos</strong> was born from the intuition of <strong className="text-white">David G. Royffe</strong>, an English engineer passionate about geometry and recreational mathematics, in the early 1990s. Unlike many board game designers from traditional tabletop circles, Royffe designed Pylos starting from a 3D <strong className="text-white">sphere-packing</strong> problem.
+          </p>
+        </div>
+
+        <div className="bg-slate-800/50 p-4 rounded-2xl border border-white/5">
+          <h3 className="text-sm font-black text-sky-400 uppercase mb-3 tracking-wider">Birth &amp; Meeting Gigamic</h3>
+          <ul className="list-disc pl-5 text-sm font-bold text-slate-300 leading-relaxed space-y-4">
+            <li>
+              <span className="text-white block mb-1">Mathematical Inspiration (1992–1993):</span>
+              Royffe was fascinated by the geometric property of square-based stacked spheres (the <strong className="text-sky-300">square pyramidal numbers: 1² + 2² + 3² + 4² = 30</strong>). His initial challenge was not creating a capture game, but a closed system where the exact piece count matched the final pyramid's volume, turning construction into a contest of resource saving and recycling.
+            </li>
+            <li>
+              <span className="text-white block mb-1">Debut with Gigamic (1994):</span>
+              French publisher <strong className="text-white">Gigamic</strong> had just achieved massive success with <em>Quarto!</em> (1991, by Blaise Müller) and was seeking a second title to launch a minimalist wooden abstract series. Royffe presented his prototype and Gigamic released it in 1994, turning it into a cornerstone of their catalog.
+            </li>
+          </ul>
+        </div>
+
+        <div className="bg-slate-800/50 p-4 rounded-2xl border border-white/5">
+          <h3 className="text-sm font-black text-sky-400 uppercase mb-3 tracking-wider">Trivia &amp; Anecdotes</h3>
+          <ul className="list-disc pl-5 text-sm font-bold text-slate-300 leading-relaxed space-y-4">
+            <li>
+              <span className="text-white block mb-1">The Dual Name Mystery (Pylos vs. Pyraos):</span>
+              Due to trademark conflicts in certain English-speaking markets during the 1990s, it was sold as <strong className="text-white">Pyraos</strong> (blending Pyramid and chaos/order). Across Europe and later editions, <strong className="text-white">Pylos</strong> prevailed for its ancient Greek ring evoking classical monuments, despite having no historical link to the Greek town of Pylos.
+            </li>
+            <li>
+              <span className="text-white block mb-1">The Art of Removing Instead of Adding:</span>
+              Early prototypes were too short and predictable. Adding the <strong className="text-sky-300">elevation rule</strong> (moving an existing board sphere upward without spending from the reserve) made Pylos deeply tactical, creating the paradox that to climb higher you must first empty the base.
+            </li>
+            <li>
+              <span className="text-white block mb-1">A Sculptural Living-Room Piece:</span>
+              Crafted in solid beech wood with light and walnut/ebony spheres, Pylos won numerous awards including <strong className="text-amber-300">Mensa Select</strong> (1994) and the <strong className="text-amber-300">Parent's Choice Gold Award</strong>.
+            </li>
+            <li>
+              <span className="text-white block mb-1">Mini &amp; Travel Editions:</span>
+              Gigamic also released compact versions for cafés and clubs, though purists favor the full-size wooden edition for the tactile weight and satisfying dull thud as spheres lock into upper sockets.
+            </li>
+            <li>
+              <span className="text-white block mb-1">Pyramidal Kinship:</span>
+              Pylos inspired later 3D abstracts like <em>Kulami</em> and <em>Pueblo</em> while remaining unique in its perfect symmetry between piece count, pyramid layers, and recycling rules.
+            </li>
+          </ul>
+        </div>
+      </div>
+    ),
+    fr: (
+      <div className="space-y-6">
+        <div className="bg-slate-800/50 p-4 rounded-2xl border border-white/5">
+          <p className="text-sm font-bold text-slate-300 leading-relaxed">
+            <strong className="text-sky-300">Pylos</strong> est né de l'intuition de <strong className="text-white">David G. Royffe</strong>, ingénieur anglais passionné de géométrie et de mathématiques récréatives, au début des années 1990, à partir d'un problème d'<strong className="text-white">empilement de sphères</strong> en 3D.
+          </p>
+        </div>
+        <div className="bg-slate-800/50 p-4 rounded-2xl border border-white/5">
+          <h3 className="text-sm font-black text-sky-400 uppercase mb-3 tracking-wider">Naissance et rencontre avec Gigamic</h3>
+          <ul className="list-disc pl-5 text-sm font-bold text-slate-300 leading-relaxed space-y-4">
+            <li>
+              <span className="text-white block mb-1">L'inspiration mathématique (1992-1993) :</span>
+              Fasciné par les <strong className="text-sky-300">nombres pyramidaux carrés (1² + 2² + 3² + 4² = 30)</strong>, Royffe imagina un système fermé où le nombre exact de billes correspond au volume final de la pyramide, transformant la construction en course d'économie.
+            </li>
+            <li>
+              <span className="text-white block mb-1">Débuts chez Gigamic (1994) :</span>
+              Après le triomphe de <em>Quarto!</em> (1991), l'éditeur français <strong className="text-white">Gigamic</strong> publia Pylos en 1994 pour inaugurer sa célèbre collection de jeux abstraits en bois.
+            </li>
+          </ul>
+        </div>
+        <div className="bg-slate-800/50 p-4 rounded-2xl border border-white/5">
+          <h3 className="text-sm font-black text-sky-400 uppercase mb-3 tracking-wider">Anecdotes et curiosités</h3>
+          <ul className="list-disc pl-5 text-sm font-bold text-slate-300 leading-relaxed space-y-4">
+            <li>
+              <span className="text-white block mb-1">Pylos vs. Pyraos :</span>
+              Commercialisé sous le nom <em>Pyraos</em> dans certains pays anglophones pour des questions de marque déposée, le nom <em>Pylos</em> s'imposa en Europe pour sa sonorité grecque antique.
+            </li>
+            <li>
+              <span className="text-white block mb-1">L'art de déplacer plutôt qu'ajouter :</span>
+              L'ajout de la règle d'élévation (monter une bille déjà posée sans puiser dans sa réserve) apporta toute sa profondeur tactique au jeu.
+            </li>
+            <li>
+              <span className="text-white block mb-1">Un objet d'art primé :</span>
+              Réalisé en bois de hêtre massif, il reçut le <strong className="text-amber-300">Mensa Select</strong> (1994) et le <strong className="text-amber-300">Parent's Choice Gold Award</strong>. Les puristes chérissent le poids et le bruit sourd des grandes billes en bois, source d'inspiration pour des jeux comme <em>Kulami</em> et <em>Pueblo</em>.
+            </li>
+          </ul>
+        </div>
+      </div>
+    ),
+    de: (
+      <div className="space-y-6">
+        <div className="bg-slate-800/50 p-4 rounded-2xl border border-white/5">
+          <p className="text-sm font-bold text-slate-300 leading-relaxed">
+            <strong className="text-sky-300">Pylos</strong> entstand Anfang der 1990er-Jahre aus der Idee des englischen Ingenieurs und Geometrie-Liebhabers <strong className="text-white">David G. Royffe</strong> rund um das dreidimensionale <strong className="text-white">Kugelpackungsproblem</strong>.
+          </p>
+        </div>
+        <div className="bg-slate-800/50 p-4 rounded-2xl border border-white/5">
+          <h3 className="text-sm font-black text-sky-400 uppercase mb-3 tracking-wider">Entstehung &amp; Gigamic</h3>
+          <ul className="list-disc pl-5 text-sm font-bold text-slate-300 leading-relaxed space-y-4">
+            <li>
+              <span className="text-white block mb-1">Mathematische Inspiration (1992–1993):</span>
+              Begeistert von den <strong className="text-sky-300">quadratischen Pyramidalzahlen (1² + 2² + 3² + 4² = 30)</strong> schuf Royffe ein geschlossenes System des Sparens und Zurückholens von Kugeln.
+            </li>
+            <li>
+              <span className="text-white block mb-1">Veröffentlichung durch Gigamic (1994):</span>
+              Nach dem Erfolg von <em>Quarto!</em> (1991) veröffentlichte <strong className="text-white">Gigamic</strong> Pylos 1994 als zweiten Eckpfeiler seiner minimalistischen Holzspielreihe.
+            </li>
+          </ul>
+        </div>
+        <div className="bg-slate-800/50 p-4 rounded-2xl border border-white/5">
+          <h3 className="text-sm font-black text-sky-400 uppercase mb-3 tracking-wider">Kuriositäten</h3>
+          <ul className="list-disc pl-5 text-sm font-bold text-slate-300 leading-relaxed space-y-4">
+            <li>
+              <span className="text-white block mb-1">Pylos vs. Pyraos:</span>
+              In einigen englischsprachigen Märkten aus Markenrechtsgründen als <em>Pyraos</em> verkauft, setzte sich in Europa der klangvolle Name <em>Pylos</em> durch.
+            </li>
+            <li>
+              <span className="text-white block mb-1">Design-Klassiker:</span>
+              Die Aufstiegsregel (Versetzen eigener Kugeln nach oben) machte das Spiel tief taktisch. Aus massivem Buchenholz gefertigt, gewann es 1994 den <strong className="text-amber-300">Mensa Select</strong> und inspirierte spätere 3D-Spiele wie <em>Kulami</em> und <em>Pueblo</em>.
+            </li>
+          </ul>
+        </div>
+      </div>
+    ),
+    es: (
+      <div className="space-y-6">
+        <div className="bg-slate-800/50 p-4 rounded-2xl border border-white/5">
+          <p className="text-sm font-bold text-slate-300 leading-relaxed">
+            <strong className="text-sky-300">Pylos</strong> nació a principios de los años 90 de la intuición de <strong className="text-white">David G. Royffe</strong>, un ingeniero inglés apasionado por la geometría y el <strong className="text-white">empaquetamiento tridimensional de esferas</strong>.
+          </p>
+        </div>
+        <div className="bg-slate-800/50 p-4 rounded-2xl border border-white/5">
+          <h3 className="text-sm font-black text-sky-400 uppercase mb-3 tracking-wider">El nacimiento y Gigamic</h3>
+          <ul className="list-disc pl-5 text-sm font-bold text-slate-300 leading-relaxed space-y-4">
+            <li>
+              <span className="text-white block mb-1">Inspiración matemática (1992-1993):</span>
+              Fascinado por los <strong className="text-sky-300">números piramidales cuadrados (1² + 2² + 3² + 4² = 30)</strong>, Royffe diseñó un sistema cerrado donde el número de esferas coincide exactamente con el volumen de la pirámide.
+            </li>
+            <li>
+              <span className="text-white block mb-1">Estreno con Gigamic (1994):</span>
+              Tras el éxito de <em>Quarto!</em> (1991), la editorial francesa <strong className="text-white">Gigamic</strong> publicó Pylos en 1994 como pilar de su elegante colección de juegos abstractos en madera.
+            </li>
+          </ul>
+        </div>
+        <div className="bg-slate-800/50 p-4 rounded-2xl border border-white/5">
+          <h3 className="text-sm font-black text-sky-400 uppercase mb-3 tracking-wider">Curiosidades</h3>
+          <ul className="list-disc pl-5 text-sm font-bold text-slate-300 leading-relaxed space-y-4">
+            <li>
+              <span className="text-white block mb-1">Pylos vs. Pyraos:</span>
+              Comercializado como <em>Pyraos</em> en algunos mercados anglosajones por motivos de registro de marca, en Europa triunfó como <em>Pylos</em> por su sonoridad griega clásica.
+            </li>
+            <li>
+              <span className="text-white block mb-1">Escultura de madera y legado:</span>
+              La regla de elevación transformó la táctica del juego. Premiado con el <strong className="text-amber-300">Mensa Select (1994)</strong> y el <strong className="text-amber-300">Parent's Choice Gold Award</strong>, sus grandes esferas de haya maciza inspiraron títulos posteriores como <em>Kulami</em> y <em>Pueblo</em>.
+            </li>
+          </ul>
+        </div>
+      </div>
+    )
   }
 };

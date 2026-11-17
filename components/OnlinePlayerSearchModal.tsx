@@ -169,6 +169,20 @@ export const getGameModeLabel = (mode: GameMode, lang: Language): string => {
       fr: "Stratego",
       de: "Stratego",
     },
+    quarto: {
+      it: "Quarto",
+      en: "Quarto",
+      es: "Quarto",
+      fr: "Quarto",
+      de: "Quarto",
+    },
+    pylos: {
+      it: "Pylos",
+      en: "Pylos",
+      es: "Pylos",
+      fr: "Pylos",
+      de: "Pylos",
+    },
   };
   return map[mode]?.[lang] || map[mode]?.["en"] || mode;
 };
@@ -535,6 +549,8 @@ export const OnlinePlayerSearchModal: React.FC<OnlinePlayerSearchModalProps> = (
     { id: "baduk_9", mode: "baduk" as GameMode, theme: "baduk-9" as BoardTheme, label: "Baduk / Go (9x9)", icon: "⚫" },
     { id: "baduk_13", mode: "baduk" as GameMode, theme: "baduk-13" as BoardTheme, label: "Baduk / Go (13x13)", icon: "⚫" },
     { id: "baduk_19", mode: "baduk" as GameMode, theme: "baduk-19" as BoardTheme, label: "Baduk / Go (19x19)", icon: "⚫" },
+    { id: "quarto", mode: "quarto" as GameMode, label: getGameModeLabel("quarto", language), icon: "🧩" },
+    { id: "pylos", mode: "pylos" as GameMode, label: getGameModeLabel("pylos", language), icon: "🔺" },
     { id: "stratego", mode: "stratego" as GameMode, label: getGameModeLabel("stratego", language), icon: "🚩" },
   ], [language]);
 
@@ -928,7 +944,7 @@ export const OnlinePlayerSearchModal: React.FC<OnlinePlayerSearchModalProps> = (
               isInviter: true,
             });
             onClose();
-          }, 1000);
+          }, 250);
         } else if (data.status === "declined") {
           if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
           setInviteStatus("declined");

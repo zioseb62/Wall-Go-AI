@@ -285,6 +285,14 @@ export class Board {
         return this.consecutive_passes >= 2;
     }
 
+    stone_count() {
+        let count = 0;
+        for (let p = 0; p < this.n; p++) {
+            if (this.board[p] !== EMPTY) count++;
+        }
+        return count;
+    }
+
     score() {
         let visited = new Uint8Array(this.n);
         let territory = { 1: 0, 2: 0 };
@@ -413,7 +421,7 @@ export function move_score(board: Board, p: number, color: number, group_of: any
     // Board position lines (3rd and 4th lines for territory & influence)
     let edge_r = Math.min(pr, board.size - 1 - pr);
     let edge_c = Math.min(pc, board.size - 1 - pc);
-    let total_stones = board.move_history.length;
+    let total_stones = Math.max(board.move_history.length, board.stone_count());
 
     if (total_stones < board.size * 2) {
         // Opening / Early game
@@ -543,8 +551,12 @@ export class MCTSEngine {
     }
 
     get_move(board: Board, color: number, time_budget = 5.0, min_simulations = 1, max_simulations = 200000) {
-        // Instant opening moves for all board sizes on early moves (move history <= 3)
-        if (board.move_history.length <= 3) {
+        const stoneCount = board.stone_count();
+        const legalNonEyeMoves = board.legal_moves_fast(color, false).moves;
+        const legalSet = new Set<number>(legalNonEyeMoves);
+
+        // Instant opening moves ONLY when actual stones on the board are <= 3 (or <= 1 on 9x9)
+        if (stoneCount <= 3 && board.consecutive_passes === 0) {
             if (this.board_size === 19) {
                 const starPoints19 = [
                     3*19+15, 15*19+15, 3*19+3, 15*19+3,
@@ -552,11 +564,11 @@ export class MCTSEngine {
                     2*19+3, 3*19+2, 15*19+2, 16*19+3,
                     9*19+9
                 ];
-                const freeCorners = starPoints19.slice(0, 4).filter(p => board.board[p] === EMPTY);
+                const freeCorners = starPoints19.slice(0, 4).filter(p => legalSet.has(p));
                 if (freeCorners.length > 0) {
                     return freeCorners[Math.floor(Math.random() * freeCorners.length)];
                 }
-                const freeOther = starPoints19.filter(p => board.board[p] === EMPTY);
+                const freeOther = starPoints19.filter(p => legalSet.has(p));
                 if (freeOther.length > 0) {
                     return freeOther[Math.floor(Math.random() * freeOther.length)];
                 }
@@ -566,18 +578,27 @@ export class MCTSEngine {
                     2*13+9, 3*13+10, 9*13+10, 10*13+9,
                     6*13+6
                 ];
-                const freeCorners = starPoints13.slice(0, 4).filter(p => board.board[p] === EMPTY);
+                const freeCorners = starPoints13.slice(0, 4).filter(p => legalSet.has(p));
                 if (freeCorners.length > 0) {
                     return freeCorners[Math.floor(Math.random() * freeCorners.length)];
                 }
-                const freeOther = starPoints13.filter(p => board.board[p] === EMPTY);
+                const freeOther = starPoints13.filter(p => legalSet.has(p));
                 if (freeOther.length > 0) {
                     return freeOther[Math.floor(Math.random() * freeOther.length)];
                 }
-            } else if (this.board_size === 9 && board.move_history.length <= 1) {
-                let key = board.move_history.length === 0 ? "EMPTY" : (board.move_history[0].move !== null ? String(board.move_history[0].move) : "EMPTY");
+            } else if (this.board_size === 9 && stoneCount <= 1) {
+                let firstStone = -1;
+                if (stoneCount === 1) {
+                    for (let i = 0; i < board.n; i++) {
+                        if (board.board[i] !== EMPTY) {
+                            firstStone = i;
+                            break;
+                        }
+                    }
+                }
+                let key = stoneCount === 0 ? "EMPTY" : String(firstStone);
                 if (OPENING_BOOK_9x9[key]) {
-                    let options = OPENING_BOOK_9x9[key].filter(p => board.board[p] === EMPTY);
+                    let options = OPENING_BOOK_9x9[key].filter(p => legalSet.has(p));
                     if (options.length > 0) {
                         return options[Math.floor(Math.random() * options.length)];
                     }
@@ -585,12 +606,9 @@ export class MCTSEngine {
             }
         }
 
-        if (!this.root) {
+        if (!this.root || this.root.is_terminal) {
             this.root = new Node(null, null, other(color));
-            // removed untried
         }
-
-        if (this.root.is_terminal) return null;
 
         let start = Date.now();
         let deadline = start + time_budget * 1000;
@@ -606,9 +624,11 @@ export class MCTSEngine {
         let max_n = -1;
         let max_q = -Infinity;
 
-        // Collect all moves with max N to break ties with Q (win rate)
+        // Collect all legal moves with max N to break ties with Q (win rate)
         let candidates: string[] = [];
         for (let m in this.root.children) {
+            let mNum = Number(m);
+            if (mNum !== -1 && !legalSet.has(mNum)) continue;
             let child = this.root.children[m as any];
             if (child.N > max_n) {
                 max_n = child.N;
@@ -632,21 +652,21 @@ export class MCTSEngine {
             }
         }
         
-        let children_arr = Object.entries(this.root.children).sort((a: any, b: any) => b[1].N - a[1].N).slice(0, 8);
+        let children_arr = Object.entries(this.root.children)
+            .filter(([m]) => Number(m) === -1 || legalSet.has(Number(m)))
+            .sort((a: any, b: any) => b[1].N - a[1].N)
+            .slice(0, 8);
         this._last_stats = {
             simulations: sims,
-            children: children_arr.map(([m, n]: [any, any]) => [board.coord_str(Number(m)), n.N, (n.q()).toFixed(3)])
+            children: children_arr.map(([m, n]: [any, any]) => [board.coord_str(Number(m) === -1 ? null : Number(m)), n.N, (n.q()).toFixed(3)])
         };
 
         return best_move === -1 ? null : best_move;
     }
 
     _candidate_moves(board: Board, color: number) {
-        let res = board.legal_moves_fast(color, false);
-        if (res.moves.length === 0) {
-            res = board.legal_moves_fast(color, true);
-        }
-        return res;
+        // Never allow filling own true eyes (allow_eyes = false)
+        return board.legal_moves_fast(color, false);
     }
 
     _simulate_once(root: Node, board: Board, root_color: number) {

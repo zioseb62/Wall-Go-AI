@@ -6,6 +6,8 @@ import { AI_PLAYER_CANDIDATES } from './OnlinePlayerSearchModal';
 
 interface AdminStatsModalProps {
   onClose: () => void;
+  requirePointsToUnlock: boolean;
+  onToggleRequirePointsToUnlock: (enabled: boolean) => Promise<void>;
 }
 
 export const isSimulatedPlayerRecord = (data: any, docId?: string): boolean => {
@@ -40,11 +42,19 @@ export const BADGE_POINTS: Record<string, number> = {
   'pente_extreme': 30,
   'domineering_extreme': 30,
   'stratego_master': 30,
+  'quarto_hard': 20,
+  'pylos_hard': 20,
 };
 
-export const AdminStatsModal: React.FC<AdminStatsModalProps> = ({ onClose }) => {
+export const AdminStatsModal: React.FC<AdminStatsModalProps> = ({
+  onClose,
+  requirePointsToUnlock,
+  onToggleRequirePointsToUnlock,
+}) => {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
+  const [togglingUnlockRule, setTogglingUnlockRule] = useState(false);
+  const [unlockRuleFeedback, setUnlockRuleFeedback] = useState<string | null>(null);
   const [dailyChartData, setDailyChartData] = useState<any[]>([]);
   const [stats, setStats] = useState({
     totalUsers: 0,
@@ -65,6 +75,8 @@ export const AdminStatsModal: React.FC<AdminStatsModalProps> = ({ onClose }) => 
     totalOnitamaGames: 0,
     totalBadukGames: 0,
     totalStrategoGames: 0,
+    totalQuartoGames: 0,
+    totalPylosGames: 0,
     multiplayerDominioGames: 0,
     multiplayerCorsaGames: 0,
     multiplayerAmazonsGames: 0,
@@ -79,6 +91,8 @@ export const AdminStatsModal: React.FC<AdminStatsModalProps> = ({ onClose }) => 
     multiplayerOnitamaGames: 0,
     multiplayerBadukGames: 0,
     multiplayerStrategoGames: 0,
+    multiplayerQuartoGames: 0,
+    multiplayerPylosGames: 0,
     totalOnlineMatches: 0,
     totalSimulatedOnlineMatches: 0,
     totalBadges: 0,
@@ -121,6 +135,9 @@ export const AdminStatsModal: React.FC<AdminStatsModalProps> = ({ onClose }) => 
           yinsh: 0,
           onitama: 0,
           baduk: 0,
+          stratego: 0,
+          quarto: 0,
+          pylos: 0,
         };
         const deviceMultiplayerByMode: Record<string, number> = { ...multiplayerByMode };
 
@@ -182,6 +199,8 @@ export const AdminStatsModal: React.FC<AdminStatsModalProps> = ({ onClose }) => 
         let totalOnitamaGames = 0;
         let totalBadukGames = 0;
         let totalStrategoGames = 0;
+        let totalQuartoGames = 0;
+        let totalPylosGames = 0;
         let totalOnlineMatches = 0;
         let maxGamesToday = 0;
         let mostActiveUser = "Nessuno";
@@ -200,7 +219,9 @@ export const AdminStatsModal: React.FC<AdminStatsModalProps> = ({ onClose }) => 
           chain_triangle: 0,
           shobu: 0,
           onitama: 0,
-          stratego: 0
+          stratego: 0,
+          quarto: 0,
+          pylos: 0
         };
 
         const todayStart = new Date();
@@ -338,6 +359,12 @@ export const AdminStatsModal: React.FC<AdminStatsModalProps> = ({ onClose }) => 
 
           if (data.strategoStats) totalStrategoGames += sumDiffs(data.strategoStats);
           else totalStrategoGames += getFlat('strategoStats.normale') + getFlat('strategoStats.difficile') + getFlat('strategoStats.estrema') + getFlat('strategoStats.maestro');
+
+          if (data.quartoStats) totalQuartoGames += sumDiffs(data.quartoStats);
+          else totalQuartoGames += getFlat('quartoStats.facile') + getFlat('quartoStats.normale') + getFlat('quartoStats.difficile') + getFlat('quartoStats.estrema') + getFlat('quartoStats.maestro');
+
+          if (data.pylosStats) totalPylosGames += sumDiffs(data.pylosStats);
+          else totalPylosGames += getFlat('pylosStats.facile') + getFlat('pylosStats.normale') + getFlat('pylosStats.difficile') + getFlat('pylosStats.estrema') + getFlat('pylosStats.maestro');
           
           if (typeof data.totalOnlineMatches === 'number') totalOnlineMatches += data.totalOnlineMatches;
           if (typeof data.totalOnlineMatchesVsAi === 'number') {
@@ -394,7 +421,7 @@ export const AdminStatsModal: React.FC<AdminStatsModalProps> = ({ onClose }) => 
           });
         });
 
-        totalGamesPlayed = totalDominioGames + totalCorsaGames + totalAmazonsGames + totalDomineeringGames + totalAbaloneGames + totalHexGames + totalOrbitoGames + totalPenteGames + totalChainTriangleGames + totalShobuGames + totalYinshGames + totalOnitamaGames + totalBadukGames + totalStrategoGames;
+        totalGamesPlayed = totalDominioGames + totalCorsaGames + totalAmazonsGames + totalDomineeringGames + totalAbaloneGames + totalHexGames + totalOrbitoGames + totalPenteGames + totalChainTriangleGames + totalShobuGames + totalYinshGames + totalOnitamaGames + totalBadukGames + totalStrategoGames + totalQuartoGames + totalPylosGames;
 
         // Calculate per-game multiplayer counts taking the max of online_rooms count and device counts
         const getFinalMultiCount = (mode: string) => {
@@ -417,11 +444,13 @@ export const AdminStatsModal: React.FC<AdminStatsModalProps> = ({ onClose }) => 
         const multiplayerOnitamaGames = getFinalMultiCount('onitama');
         const multiplayerBadukGames = getFinalMultiCount('baduk');
         const multiplayerStrategoGames = getFinalMultiCount('stratego');
+        const multiplayerQuartoGames = getFinalMultiCount('quarto');
+        const multiplayerPylosGames = getFinalMultiCount('pylos');
 
         const totalMultiplayerGamesSum = multiplayerDominioGames + multiplayerCorsaGames + multiplayerAmazonsGames +
           multiplayerDomineeringGames + multiplayerAbaloneGames + multiplayerHexGames + multiplayerOrbitoGames +
           multiplayerPenteGames + multiplayerChainTriangleGames + multiplayerShobuGames + multiplayerYinshGames +
-          multiplayerOnitamaGames + multiplayerBadukGames + multiplayerStrategoGames;
+          multiplayerOnitamaGames + multiplayerBadukGames + multiplayerStrategoGames + multiplayerQuartoGames + multiplayerPylosGames;
 
         totalOnlineMatches = Math.max(totalOnlineMatches, (roomsSnapshot as any)?.size || 0, totalMultiplayerGamesSum);
         const totalSimulatedOnlineMatches = Math.max(roomsSimulatedCount, devicesSimulatedCount);
@@ -448,6 +477,8 @@ export const AdminStatsModal: React.FC<AdminStatsModalProps> = ({ onClose }) => 
           totalOnitamaGames,
           totalBadukGames,
           totalStrategoGames,
+          totalQuartoGames,
+          totalPylosGames,
           multiplayerDominioGames,
           multiplayerCorsaGames,
           multiplayerAmazonsGames,
@@ -462,6 +493,8 @@ export const AdminStatsModal: React.FC<AdminStatsModalProps> = ({ onClose }) => 
           multiplayerOnitamaGames,
           multiplayerBadukGames,
           multiplayerStrategoGames,
+          multiplayerQuartoGames,
+          multiplayerPylosGames,
           totalOnlineMatches,
           totalSimulatedOnlineMatches,
           totalBadges: uniqueBadges.size,
@@ -511,6 +544,8 @@ export const AdminStatsModal: React.FC<AdminStatsModalProps> = ({ onClose }) => 
         totalOnitamaScore: number,
         totalBadukScore: number,
         totalStrategoScore: number,
+        totalQuartoScore: number,
+        totalPylosScore: number,
         location: string, 
         lastActive: number, 
         originalName: string,
@@ -553,6 +588,8 @@ export const AdminStatsModal: React.FC<AdminStatsModalProps> = ({ onClose }) => 
               totalOnitamaScore: 0,
               totalBadukScore: 0,
               totalStrategoScore: 0,
+              totalQuartoScore: 0,
+              totalPylosScore: 0,
               location: data.userLocation || '', 
               lastActive: 0, 
               originalName: uName,
@@ -582,7 +619,10 @@ export const AdminStatsModal: React.FC<AdminStatsModalProps> = ({ onClose }) => 
             }
           });
 
-          const docScore = Number(data.totalScore) || 0;
+          const rawDocScore = Number(data.totalScore) || 0;
+          const docScore = (uName.toLowerCase() === 'zioseb' && rawDocScore > 2400)
+            ? Number((rawDocScore - 1180.8211157937977).toFixed(6))
+            : rawDocScore;
           
           if (data.unlockedModes && Array.isArray(data.unlockedModes)) {
             data.unlockedModes.forEach((m: string) => userGroups[slug].unlockedModes.add(m));
@@ -605,6 +645,8 @@ export const AdminStatsModal: React.FC<AdminStatsModalProps> = ({ onClose }) => 
           userGroups[slug].totalOnitamaScore = Math.max(userGroups[slug].totalOnitamaScore, Number(data.totalOnitamaScore) || 0);
           userGroups[slug].totalBadukScore = Math.max(userGroups[slug].totalBadukScore, Number(data.totalBadukScore) || 0);
           userGroups[slug].totalStrategoScore = Math.max(userGroups[slug].totalStrategoScore, Number(data.totalStrategoScore) || 0);
+          userGroups[slug].totalQuartoScore = Math.max(userGroups[slug].totalQuartoScore, Number(data.totalQuartoScore) || 0);
+          userGroups[slug].totalPylosScore = Math.max(userGroups[slug].totalPylosScore, Number(data.totalPylosScore) || 0);
           
           if (lastActiveTime > userGroups[slug].lastActive) {
             userGroups[slug].lastActive = lastActiveTime;
@@ -663,7 +705,7 @@ export const AdminStatsModal: React.FC<AdminStatsModalProps> = ({ onClose }) => 
       const getPointsSpent = (unlockedModes: Set<string>, userName: string, userLocation: string, freeUnlockedModes: Set<string>): number => {
         if (userName === "ZioSeb" && userLocation.includes("Sant'Alfio")) return 0;
         if (userName === "Patty" && userLocation.includes("Riposto")) return 0;
-        const alwaysFree = ["dominio", "pente", "amazons", "corsa", "domineering", "abalone", "hex", "orbito", "chain_triangle", "yinsh", "baduk", "onitama", "shobu"];
+        const alwaysFree = ["dominio", "pente", "amazons", "corsa", "domineering", "abalone", "hex", "orbito", "chain_triangle", "yinsh", "baduk", "onitama", "shobu", "quarto", "pylos", "stratego"];
         let spent = 0;
         const unique = Array.from(unlockedModes);
         unique.forEach(m => {
@@ -683,7 +725,7 @@ export const AdminStatsModal: React.FC<AdminStatsModalProps> = ({ onClose }) => 
 
         const finalScore = Math.max(info.totalBaseScore, totalUniqueBadgePoints);
         const ptsSpent = getPointsSpent(info.unlockedModes, info.originalName, info.location, info.freeUnlockedModes);
-        const totalScoreOverall = Math.max(0, finalScore + info.totalFugaScore + info.totalAmazonsScore + info.totalDomineeringScore + info.totalAbaloneScore + info.totalHexScore + info.totalOrbitoScore + info.totalPenteScore + info.totalChainTriangleScore + info.totalShobuScore + info.totalYinshScore + info.totalOnitamaScore + info.totalBadukScore + info.totalStrategoScore - ptsSpent);
+        const totalScoreOverall = Math.max(0, finalScore + info.totalFugaScore + info.totalAmazonsScore + info.totalDomineeringScore + info.totalAbaloneScore + info.totalHexScore + info.totalOrbitoScore + info.totalPenteScore + info.totalChainTriangleScore + info.totalShobuScore + info.totalYinshScore + info.totalOnitamaScore + info.totalBadukScore + info.totalStrategoScore + info.totalQuartoScore + info.totalPylosScore - ptsSpent);
         const displayName = info.location ? `${info.originalName} (${info.location})` : info.originalName;
         const targetSlug = info.location
           ? `${info.originalName.toLowerCase().replace(/[^a-z0-9]/g, '_')}_${info.location.toLowerCase().replace(/[^a-z0-9]/g, '_')}`
@@ -705,6 +747,8 @@ export const AdminStatsModal: React.FC<AdminStatsModalProps> = ({ onClose }) => 
           totalOnitamaScore: info.totalOnitamaScore,
           totalBadukScore: info.totalBadukScore,
           totalStrategoScore: info.totalStrategoScore,
+          totalQuartoScore: info.totalQuartoScore,
+          totalPylosScore: info.totalPylosScore,
           totalScoreOverall: totalScoreOverall,
           lastActive: info.lastActive ? new Date(info.lastActive).toISOString() : new Date().toISOString()
         }, { merge: true });
@@ -737,6 +781,76 @@ export const AdminStatsModal: React.FC<AdminStatsModalProps> = ({ onClose }) => 
           </div>
         ) : (
           <div className="space-y-4 max-h-[70vh] overflow-y-auto custom-scrollbar pr-2">
+            <div className={`p-4 rounded-2xl border transition-colors ${
+              requirePointsToUnlock
+                ? "bg-amber-950/40 border-amber-500/40"
+                : "bg-emerald-950/40 border-emerald-500/40"
+            }`}>
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-base">{requirePointsToUnlock ? "🔒" : "🔓"}</span>
+                    <h3 className="text-sm font-black text-white uppercase tracking-wide">
+                      Sblocco Giochi con Punti
+                    </h3>
+                    <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full border ${
+                      requirePointsToUnlock
+                        ? "bg-amber-500/20 text-amber-300 border-amber-400/40"
+                        : "bg-emerald-500/20 text-emerald-300 border-emerald-400/40"
+                    }`}>
+                      {requirePointsToUnlock ? "Attivo (50 PT)" : "Disattivato • Tutti Sbloccati"}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-300 mt-1.5 leading-relaxed">
+                    {requirePointsToUnlock
+                      ? "I giocatori devono accumulare e spendere 50 punti per sbloccare i giochi non ancora sbloccati."
+                      : "Tutti i giochi sono sbloccati gratuitamente per tutti i giocatori, senza bisogno di accumulare punti."}
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={requirePointsToUnlock}
+                  disabled={togglingUnlockRule}
+                  onClick={async () => {
+                    const nextVal = !requirePointsToUnlock;
+                    setTogglingUnlockRule(true);
+                    setUnlockRuleFeedback(null);
+                    try {
+                      await onToggleRequirePointsToUnlock(nextVal);
+                      setUnlockRuleFeedback(
+                        nextVal
+                          ? "Sblocco a punti riattivato per tutti i giocatori."
+                          : "Tutti i giochi sono ora sbloccati per tutti i giocatori."
+                      );
+                    } catch {
+                      setUnlockRuleFeedback("Errore durante il salvataggio su Firestore.");
+                    } finally {
+                      setTogglingUnlockRule(false);
+                    }
+                  }}
+                  className={`relative inline-flex h-8 w-14 shrink-0 cursor-pointer items-center rounded-full border-2 transition-colors focus:outline-none disabled:opacity-60 ${
+                    requirePointsToUnlock
+                      ? "bg-amber-500 border-amber-400"
+                      : "bg-emerald-600 border-emerald-400"
+                  }`}
+                  title={requirePointsToUnlock ? "Disattiva sblocco a punti" : "Riattiva sblocco a punti"}
+                >
+                  <span
+                    className={`inline-block h-6 w-6 transform rounded-full bg-white shadow-md transition-transform ${
+                      requirePointsToUnlock ? "translate-x-7" : "translate-x-0.5"
+                    }`}
+                  />
+                </button>
+              </div>
+              {unlockRuleFeedback && (
+                <p className="text-[11px] font-bold text-slate-200 mt-2 bg-slate-900/60 px-2.5 py-1.5 rounded-lg border border-white/10">
+                  {unlockRuleFeedback}
+                </p>
+              )}
+            </div>
+
             <div className="grid grid-cols-2 gap-3">
               <StatCard label="Utenti Totali" value={stats.totalUsers} icon="👥" />
               <StatCard label="Attivi Oggi" value={stats.activeToday} icon="🟢" />
@@ -780,6 +894,8 @@ export const AdminStatsModal: React.FC<AdminStatsModalProps> = ({ onClose }) => 
                 <MiniStat label="Yinsh" aiValue={stats.totalYinshGames} multiValue={stats.multiplayerYinshGames} />
                 <MiniStat label="Onitama" aiValue={stats.totalOnitamaGames} multiValue={stats.multiplayerOnitamaGames} />
                 <MiniStat label="Baduk" aiValue={stats.totalBadukGames} multiValue={stats.multiplayerBadukGames} />
+                <MiniStat label="Quarto" aiValue={stats.totalQuartoGames} multiValue={stats.multiplayerQuartoGames} />
+                <MiniStat label="Pylos" aiValue={stats.totalPylosGames} multiValue={stats.multiplayerPylosGames} />
                 <MiniStat label="Stratego" aiValue={stats.totalStrategoGames} multiValue={stats.multiplayerStrategoGames} />
               </div>
             </div>

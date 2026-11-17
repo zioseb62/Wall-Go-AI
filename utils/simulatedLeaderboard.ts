@@ -77,6 +77,8 @@ export const insertSimulatedPlayerToLeaderboard = async (params: {
       onitama: "totalOnitamaScore",
       baduk: "totalBadukScore",
       stratego: "totalStrategoScore",
+      quarto: "totalQuartoScore",
+      pylos: "totalPylosScore",
     };
 
     const targetModeField = modeFieldMap[mode] || "totalScore";
@@ -112,6 +114,9 @@ export const insertSimulatedPlayerToLeaderboard = async (params: {
       totalYinshScore: mode === "yinsh" ? score : (typeof existingData.totalYinshScore === "number" ? existingData.totalYinshScore : 0),
       totalOnitamaScore: mode === "onitama" ? score : (typeof existingData.totalOnitamaScore === "number" ? existingData.totalOnitamaScore : 0),
       totalBadukScore: mode === "baduk" ? score : (typeof existingData.totalBadukScore === "number" ? existingData.totalBadukScore : 0),
+      totalStrategoScore: mode === "stratego" ? score : (typeof existingData.totalStrategoScore === "number" ? existingData.totalStrategoScore : 0),
+      totalQuartoScore: mode === "quarto" ? score : (typeof existingData.totalQuartoScore === "number" ? existingData.totalQuartoScore : 0),
+      totalPylosScore: mode === "pylos" ? score : (typeof existingData.totalPylosScore === "number" ? existingData.totalPylosScore : 0),
       totalScoreOverall: finalOverallScore,
       totalGamesOverall: Math.max(existingData.totalGamesOverall || 0, gamesCount),
       totalGamesTarget: {

@@ -36,13 +36,22 @@ interface PieceProps {
   isDeadBadukStone?: boolean;
   onToggleDeadStone?: () => void;
   isOpponentLastMove?: boolean;
+  isWallGo3D?: boolean;
+  boardTiltX?: number;
+  boardRotateZ?: number;
+  wasBoardDraggedRef?: React.MutableRefObject<boolean>;
+  animatedPosStyle?: React.CSSProperties;
+  rollAngleDeg?: number;
+  moveAngleBoardDeg?: number;
+  isRolling3D?: boolean;
 }
 
 const Piece: React.FC<PieceProps> = ({ 
   player, pos, idx, isSelected, isClickable, isInvalidShobu, onInvalidShobuClick, isLockedByRule,
   onSelectPiece, onMove, turnPhase, hasPossibleMoves, isHex, getPosStyle, pieceWidthPerc, boardRatio, canStay,
   gameMode, onPointerEnterPiece, onPointerDownPiece, onSelectOpponentPiece, isWinningPiece, isThreatPiece, isShobuActiveValid, onRevertMove, badukStoneColor = "classic", startingPlayerIndex = 0,
-  isDeadBadukStone, onToggleDeadStone, isOpponentLastMove
+  isDeadBadukStone, onToggleDeadStone, isOpponentLastMove, isWallGo3D = false, boardTiltX = 0, boardRotateZ = 0, wasBoardDraggedRef,
+  animatedPosStyle, rollAngleDeg = 0, moveAngleBoardDeg = 0, isRolling3D = false
 }) => {
   const prevPosRef = useRef<Point>(pos);
   const [isMoving, setIsMoving] = useState(false);
@@ -56,36 +65,117 @@ const Piece: React.FC<PieceProps> = ({
     }
   }, [pos.r, pos.c]);
 
-  const isActuallyLocked = !hasPossibleMoves && !player.hasWallbreaker && gameMode !== 'shobu';
+  const isActuallyLocked = !hasPossibleMoves && !player.hasWallbreaker && gameMode !== 'shobu' && gameMode !== 'domineering' && gameMode !== 'baduk';
 
   const derivedColor = (gameMode === 'baduk' && badukStoneColor === 'classic') 
     ? (player.id === (startingPlayerIndex === 0 ? 1 : 2) ? '#212121' : '#f8f9fa') 
     : player.color;
 
+  const pieceScale = isWinningPiece
+    ? 1.25
+    : isSelected && gameMode !== 'abalone'
+      ? 1.22
+      : isOpponentLastMove
+        ? 1.05
+        : isDeadBadukStone
+          ? 0.95
+          : 1;
+
+  const tiltRad = (boardTiltX * Math.PI) / 180;
+  const invCosTilt = isWallGo3D ? 1 / Math.max(0.75, Math.cos(tiltRad)) : 1;
+  const sphereLiftPct = isWallGo3D ? Math.min(18, (boardTiltX / 38) * 16) : 0;
+  // Direction of rolling in the counter-rotated Piece screen coordinate system
+  const rollDirScreenDeg = moveAngleBoardDeg + boardRotateZ;
+
   return (
     <div
       className={`
-        absolute flex items-center justify-center -translate-x-1/2 -translate-y-1/2 touch-none select-none pointer-events-none
-        transition-all duration-300 cubic-bezier(0.34, 1.56, 0.64, 1)
+        absolute flex items-center justify-center touch-none select-none pointer-events-none
+        ${isWallGo3D ? '' : '-translate-x-1/2 -translate-y-1/2 transition-all duration-300 cubic-bezier(0.34, 1.56, 0.64, 1)'}
         ${pos.isNewAi ? 'animate-penteGrow' : ''}
-        ${isWinningPiece ? `scale-125 z-[60] ring-4 ring-yellow-400 ${gameMode !== 'baduk' ? 'animate-pulse' : ''}` : (isThreatPiece ? `z-[55] ring-4 ring-orange-500 ${gameMode !== 'baduk' ? 'animate-threatPulse' : ''}` : (isSelected ? (gameMode === 'abalone' ? 'z-50' : 'scale-125 z-50 ring-4 ring-white/40') : (isOpponentLastMove ? 'z-50 scale-105' : 'z-40 scale-100')))}
+        ${isWinningPiece ? `${isWallGo3D ? '' : 'scale-125'} z-[60] ring-4 ring-yellow-400 ${gameMode !== 'baduk' ? 'animate-pulse' : ''}` : (isThreatPiece ? `z-[55] ring-4 ring-orange-500 ${gameMode !== 'baduk' ? 'animate-threatPulse' : ''}` : (isSelected ? (gameMode === 'abalone' ? 'z-50' : `${isWallGo3D ? '' : 'scale-125'} z-50 ring-4 ring-white/40`) : (isOpponentLastMove ? `z-50 ${isWallGo3D ? '' : 'scale-105'}` : `z-40 ${isWallGo3D ? '' : 'scale-100'}`)))}
         ${isShobuActiveValid && !isSelected ? `ring-2 ring-emerald-400 ${gameMode !== 'baduk' ? 'animate-pulse' : ''}` : ''}
-        ${isDeadBadukStone ? 'opacity-35 grayscale saturate-0 scale-95' : (isActuallyLocked && !isSelected && !isWinningPiece && !isThreatPiece ? 'opacity-40 grayscale saturate-[0.2]' : 'opacity-100')}
-        ${isMoving ? 'brightness-150' : ''} 
-        ${turnPhase === 'setup' && gameMode !== 'pente' && gameMode !== 'hex' && gameMode !== 'baduk' ? 'animate-pulse' : ''}
-        ${isClickable && !isLockedByRule ? 'active:scale-95' : ''}
+        ${isDeadBadukStone ? `opacity-35 grayscale saturate-0 ${isWallGo3D ? '' : 'scale-95'}` : (isActuallyLocked && !isSelected && !isWinningPiece && !isThreatPiece ? 'opacity-40 grayscale saturate-[0.2]' : 'opacity-100')}
+        ${isMoving && !isWallGo3D ? 'brightness-150' : ''} 
+        ${turnPhase === 'setup' && gameMode !== 'pente' && gameMode !== 'hex' && gameMode !== 'baduk' && gameMode !== 'domineering' && !isWallGo3D ? 'animate-pulse' : ''}
+        ${isClickable && !isLockedByRule && !isWallGo3D ? 'active:scale-95' : ''}
       `}
       style={{
-        ...getPosStyle(pos),
+        ...(animatedPosStyle || getPosStyle(pos)),
         width: `${pieceWidthPerc}%`,
         height: `${pieceWidthPerc * boardRatio}%`, 
         borderRadius: '50%',
-        background: `radial-gradient(circle at 35% 35%, rgba(255,255,255,0.9) 0%, rgba(255,255,255,0.2) 20%, transparent 50%), radial-gradient(circle at 50% 50%, ${derivedColor} 0%, ${derivedColor} 70%, rgba(0,0,0,0.4) 100%)`,
+        transform: isWallGo3D
+          ? `translate(-50%, -50%) translateZ(9px) rotateZ(${-boardRotateZ}deg) translateY(-${sphereLiftPct.toFixed(1)}%) scale(${pieceScale.toFixed(3)}, ${(pieceScale * invCosTilt).toFixed(3)})`
+          : undefined,
+        backgroundImage: isWallGo3D
+          ? `radial-gradient(circle at 30% 36%, ${derivedColor} 0%, ${derivedColor} 42%, color-mix(in srgb, ${derivedColor} 58%, #000000) 74%, color-mix(in srgb, ${derivedColor} 24%, #000000) 93%, color-mix(in srgb, ${derivedColor} 36%, #000000) 100%)`
+          : `radial-gradient(circle at 35% 35%, rgba(255,255,255,0.9) 0%, rgba(255,255,255,0.2) 20%, transparent 50%), radial-gradient(circle at 50% 50%, ${derivedColor} 0%, ${derivedColor} 70%, rgba(0,0,0,0.4) 100%)`,
         backgroundColor: derivedColor,
-        boxShadow: isWinningPiece ? `0 0 50px ${derivedColor}, 0 0 20px yellow, inset -2px -2px 8px rgba(0,0,0,0.5)` : (isThreatPiece ? `0 0 40px ${derivedColor}, 0 0 15px orange, inset -2px -2px 8px rgba(0,0,0,0.5)` : (isSelected ? `0 0 35px ${derivedColor}, 0 0 15px white, inset -2px -2px 8px rgba(0,0,0,0.5)` : `0 10px 20px rgba(0,0,0,0.5), 0 0 12px ${derivedColor}44, inset -2px -2px 6px rgba(0,0,0,0.4)`)),
-        border: turnPhase === 'setup' ? '2px solid white' : 'none'
+        boxShadow: isWinningPiece
+          ? `0 0 50px ${derivedColor}, 0 0 20px yellow, inset -2px -2px 8px rgba(0,0,0,0.5)`
+          : isThreatPiece
+            ? `0 0 40px ${derivedColor}, 0 0 15px orange, inset -2px -2px 8px rgba(0,0,0,0.5)`
+            : isSelected
+              ? `0 0 35px ${derivedColor}, 0 0 15px white, inset -4px -4px 10px rgba(0,0,0,0.55)`
+              : isWallGo3D
+                ? `inset -5px -4px 10px rgba(0,0,0,0.55), inset 2px 2px 5px rgba(255,255,255,0.22)`
+                : `0 10px 20px rgba(0,0,0,0.5), 0 0 12px ${derivedColor}44, inset -2px -2px 6px rgba(0,0,0,0.4)`,
+        border: turnPhase === 'setup' && !isWallGo3D ? '2px solid white' : 'none'
       }}
     >
+      {/* 3D Revolving Spherical Surface Bands + Fixed Specular Highlight for Realistic Rolling */}
+      {isWallGo3D && (
+        <>
+          <svg
+            viewBox="-50 -50 100 100"
+            className="absolute inset-0 w-full h-full rounded-full overflow-hidden pointer-events-none z-[2]"
+          >
+            <g transform={`rotate(${rollDirScreenDeg.toFixed(1)})`}>
+              {[0, 1, 2].map((k) => {
+                const deg = ((((rollAngleDeg + k * 60) % 180) + 180) % 180) - 90;
+                const theta = (deg * Math.PI) / 180;
+                const sinT = Math.sin(theta);
+                const cosT = Math.cos(theta);
+                if (cosT <= 0.04) return null;
+                const rx = Math.max(0.3, Math.abs(48.5 * sinT));
+                const sweep = sinT >= 0 ? 1 : 0;
+                const isBrightSeam = k === 0;
+                return (
+                  <g key={k}>
+                    <path
+                      d={`M 0 -48.5 A ${rx.toFixed(2)} 48.5 0 0 ${sweep} 0 48.5`}
+                      fill="none"
+                      stroke={isBrightSeam ? 'rgba(255,255,255,0.46)' : 'rgba(0,0,0,0.34)'}
+                      strokeWidth={(isBrightSeam ? 4.2 * cosT : 3.2 * cosT).toFixed(2)}
+                      strokeLinecap="round"
+                      opacity={((isRolling3D ? 0.92 : 0.62) * Math.pow(cosT, 0.65)).toFixed(2)}
+                    />
+                    {isBrightSeam && (
+                      <ellipse
+                        cx={(34 * sinT).toFixed(2)}
+                        cy="0"
+                        rx={Math.max(1.2, 9.5 * cosT).toFixed(2)}
+                        ry="16"
+                        fill="rgba(255,255,255,0.22)"
+                        opacity={(0.85 * cosT).toFixed(2)}
+                      />
+                    )}
+                  </g>
+                );
+              })}
+            </g>
+          </svg>
+          {/* Stationary 3D Specular Light Highlight & Ambient Rim Shading anchored to top-left room light */}
+          <div
+            className="absolute inset-0 rounded-full pointer-events-none z-[3]"
+            style={{
+              backgroundImage:
+                'radial-gradient(circle at 26% 32%, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0.55) 8%, rgba(255,255,255,0.12) 20%, transparent 36%)',
+            }}
+          />
+        </>
+      )}
       <svg 
         className="absolute inset-0 w-full h-full z-10 pointer-events-none" 
         viewBox="0 0 100 100"
@@ -108,6 +198,7 @@ const Piece: React.FC<PieceProps> = ({
           }}
           onClick={(e) => {
             e.stopPropagation();
+            if (wasBoardDraggedRef?.current) return;
             if (onToggleDeadStone) {
               onToggleDeadStone();
               return;
@@ -118,7 +209,7 @@ const Piece: React.FC<PieceProps> = ({
               return;
             }
             if (isClickable && !isLockedByRule) {
-              if (turnPhase === 'walling' && gameMode === 'dominio') {
+              if (turnPhase === 'walling' && (gameMode === 'dominio' || gameMode === 'amazons')) {
                 onRevertMove?.();
                 return;
               }
@@ -131,7 +222,9 @@ const Piece: React.FC<PieceProps> = ({
           }}
         />
       </svg>
-      <div className="absolute top-[12%] left-[12%] w-[25%] h-[25%] bg-white/30 rounded-full blur-[1px] pointer-events-none" />
+      {!isWallGo3D && (
+        <div className="absolute top-[12%] left-[12%] w-[25%] h-[25%] bg-white/30 rounded-full blur-[1px] pointer-events-none" />
+      )}
       {isShobuActiveValid && !isSelected && (
         <div className={`absolute -inset-[3px] rounded-full border-[2px] border-emerald-400 pointer-events-none z-20 shadow-[0_0_8px_rgba(52,211,153,0.6)] ${gameMode !== 'baduk' ? 'animate-pulse' : ''}`} />
       )}
@@ -219,6 +312,52 @@ const Board: React.FC<BoardProps> = ({
   const [lastPanPos, setLastPanPos] = useState({ x: 0, y: 0 });
   const [hasPanned, setHasPanned] = useState(false);
   const [portalTarget, setPortalTarget] = useState<HTMLElement | null>(null);
+
+  // Interactive 3D orientation state for Wall Go (gameMode === 'dominio'), Quoridor (gameMode === 'corsa'), Amazons (gameMode === 'amazons'), Domineering (gameMode === 'domineering'), Shobu (gameMode === 'shobu'), and Baduk 9x9 (theme === 'baduk-9')
+  const isWallGoMode = gameMode === 'dominio' || gameMode === 'corsa' || gameMode === 'amazons' || gameMode === 'domineering' || gameMode === 'shobu' || (gameMode === 'baduk' && theme === 'baduk-9') || theme === 'corsa' || theme.startsWith('amazons') || theme === 'domineering' || theme === 'baduk-9' || theme === 'shobu' || theme === 'shobu-scacchiera' || (!gameMode && !theme.startsWith('baduk') && !theme.startsWith('abalone') && theme !== 'hex' && theme !== 'orbito' && theme !== 'pente');
+  const DEFAULT_WALLGO_TILT_X = 34;
+  const DEFAULT_WALLGO_ROTATE_Z = -10;
+  const [wallGoTiltX, setWallGoTiltX] = useState<number>(() => (isWallGoMode ? DEFAULT_WALLGO_TILT_X : 0)); // 0 = flat 2D, >0 = 3D tilt angle in degrees (max 38°)
+  const [wallGoRotateZ, setWallGoRotateZ] = useState<number>(() => (isWallGoMode ? DEFAULT_WALLGO_ROTATE_Z : 0)); // 360-degree azimuth rotation
+  const [isDraggingWallGo3D, setIsDraggingWallGo3D] = useState<boolean>(false);
+  const wasMatchEndedRef = useRef<boolean>(false);
+  const wallGoDragRef = useRef<{
+    active: boolean;
+    lastX: number;
+    lastY: number;
+    totalDist: number;
+    wasDragged: boolean;
+  }>({
+    active: false,
+    lastX: 0,
+    lastY: 0,
+    totalDist: 0,
+    wasDragged: false,
+  });
+  const wasBoardDraggedRef = useRef<boolean>(false);
+  const isWallGo3D = isWallGoMode && wallGoTiltX > 1 && !winner && status !== 'ended' && status !== 'scoring';
+  useEffect(() => {
+    setWallGoTiltX(isWallGoMode ? DEFAULT_WALLGO_TILT_X : 0);
+    setWallGoRotateZ(isWallGoMode ? DEFAULT_WALLGO_ROTATE_Z : 0);
+    setIsDraggingWallGo3D(false);
+    wallGoDragRef.current.active = false;
+  }, [gameMode, theme, isWallGoMode]);
+  useEffect(() => {
+    const isEnded = Boolean(winner || status === 'ended' || status === 'scoring');
+    if (isEnded) {
+      wasMatchEndedRef.current = true;
+      setWallGoTiltX(0);
+      setWallGoRotateZ(0);
+      setIsDraggingWallGo3D(false);
+      wallGoDragRef.current.active = false;
+    } else if (wasMatchEndedRef.current) {
+      wasMatchEndedRef.current = false;
+      if (isWallGoMode) {
+        setWallGoTiltX(DEFAULT_WALLGO_TILT_X);
+        setWallGoRotateZ(DEFAULT_WALLGO_ROTATE_Z);
+      }
+    }
+  }, [winner, status, isWallGoMode]);
   useEffect(() => {
     if (hexZoomCell) {
       setPortalTarget(document.getElementById('bottom-action-buttons') || document.body);
@@ -458,6 +597,186 @@ const Board: React.FC<BoardProps> = ({
     }
   };
 
+  // 60fps 3D Spherical Piece Rolling & 3D Wall Bottom-to-Top Rising Animation Trackers
+  const [, setAnim3DTick] = useState(0);
+  const pieceRollTracksRef = useRef<
+    Record<
+      string,
+      {
+        lastR: number;
+        lastC: number;
+        fromTop: number;
+        fromLeft: number;
+        curTop: number;
+        curLeft: number;
+        toTop: number;
+        toLeft: number;
+        startTime: number;
+        duration: number;
+        moveAngleBoardDeg: number;
+        startRollDeg: number;
+        targetRollDeg: number;
+        curRollDeg: number;
+        isRolling: boolean;
+        wasContinuing: boolean;
+      }
+    >
+  >({});
+  const wallRiseTracksRef = useRef<
+    Record<
+      string,
+      {
+        startTime: number;
+        duration: number;
+        progress: number;
+      }
+    >
+  >({});
+  const wallsInitRef = useRef<boolean>(false);
+
+  // Sync piece target positions & detect moves synchronously during render so the very first frame of a move starts interpolating smoothly without a 1-frame jump
+  const activePieceKeys = new Set<string>();
+  players.forEach((p) => {
+    p.positions.forEach((pos, idx) => {
+      const pieceKey = pos.id || `${p.id}-${idx}`;
+      activePieceKeys.add(pieceKey);
+      const targetStyle = getPosStyle(pos);
+      const targetTop = parseFloat(String(targetStyle.top));
+      const targetLeft = parseFloat(String(targetStyle.left));
+      const existing = pieceRollTracksRef.current[pieceKey];
+      if (!existing) {
+        pieceRollTracksRef.current[pieceKey] = {
+          lastR: pos.r,
+          lastC: pos.c,
+          fromTop: targetTop,
+          fromLeft: targetLeft,
+          curTop: targetTop,
+          curLeft: targetLeft,
+          toTop: targetTop,
+          toLeft: targetLeft,
+          startTime: 0,
+          duration: 295,
+          moveAngleBoardDeg: p.id === 1 ? 0 : 180,
+          startRollDeg: (p.id * 45 + idx * 60) % 360,
+          targetRollDeg: (p.id * 45 + idx * 60) % 360,
+          curRollDeg: (p.id * 45 + idx * 60) % 360,
+          isRolling: false,
+          wasContinuing: false,
+        };
+      } else if (existing.lastR !== pos.r || existing.lastC !== pos.c) {
+        const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+        const dTop = targetTop - existing.curTop;
+        const dLeft = targetLeft - existing.curLeft;
+        const distPerc = Math.hypot(dLeft * boardRatio, dTop);
+        const angleDeg = Math.atan2(dTop, dLeft * boardRatio) * (180 / Math.PI);
+        // ~240° of sphere rotation per cell traveled
+        const deltaRollDeg = (distPerc / 14.2857) * 240;
+        const wasContinuing = existing.isRolling && now - existing.startTime < existing.duration + 70;
+
+        existing.lastR = pos.r;
+        existing.lastC = pos.c;
+        existing.fromTop = existing.curTop;
+        existing.fromLeft = existing.curLeft;
+        existing.toTop = targetTop;
+        existing.toLeft = targetLeft;
+        existing.startTime = now;
+        existing.duration = 295;
+        if (distPerc > 0.01) {
+          existing.moveAngleBoardDeg = angleDeg;
+        }
+        existing.startRollDeg = existing.curRollDeg;
+        existing.targetRollDeg = existing.curRollDeg + deltaRollDeg;
+        existing.isRolling = true;
+        existing.wasContinuing = wasContinuing;
+      }
+    });
+  });
+  Object.keys(pieceRollTracksRef.current).forEach((k) => {
+    if (!activePieceKeys.has(k)) {
+      delete pieceRollTracksRef.current[k];
+    }
+  });
+
+  // Sync wall rising animations synchronously so newly placed walls start at progress = 0 (bottom) and rise to 1 (top)
+  const currentWallIds = new Set<string>();
+  walls.forEach((w) => {
+    currentWallIds.add(w.id);
+    if (!wallRiseTracksRef.current[w.id]) {
+      const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+      const shouldAnimateRise = wallsInitRef.current && status === 'playing';
+      wallRiseTracksRef.current[w.id] = {
+        startTime: now,
+        duration: 480,
+        progress: shouldAnimateRise ? 0 : 1,
+      };
+    }
+  });
+  if (!wallsInitRef.current) {
+    wallsInitRef.current = true;
+  }
+  Object.keys(wallRiseTracksRef.current).forEach((wId) => {
+    if (!currentWallIds.has(wId)) {
+      delete wallRiseTracksRef.current[wId];
+    }
+  });
+
+  useEffect(() => {
+    let rafId: number | null = null;
+    const step = () => {
+      const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+      let hasActive = false;
+
+      Object.values(pieceRollTracksRef.current).forEach((track) => {
+        if (track.isRolling) {
+          const rawT = Math.min(1, Math.max(0, (now - track.startTime) / track.duration));
+          const easedT = track.wasContinuing
+            ? 1 - Math.pow(1 - rawT, 1.5)
+            : 0.5 - 0.5 * Math.cos(Math.PI * rawT);
+          track.curTop = track.fromTop + (track.toTop - track.fromTop) * easedT;
+          track.curLeft = track.fromLeft + (track.toLeft - track.fromLeft) * easedT;
+          track.curRollDeg = track.startRollDeg + (track.targetRollDeg - track.startRollDeg) * easedT;
+          if (rawT >= 1) {
+            track.curTop = track.toTop;
+            track.curLeft = track.toLeft;
+            track.curRollDeg = track.targetRollDeg;
+            track.isRolling = false;
+            track.wasContinuing = false;
+          } else {
+            hasActive = true;
+          }
+        }
+      });
+
+      Object.values(wallRiseTracksRef.current).forEach((wTrack) => {
+        if (wTrack.progress < 1) {
+          const rawT = Math.min(1, Math.max(0, (now - wTrack.startTime) / wTrack.duration));
+          // Smooth cubic ease-out rising from bottom (0) to top (1)
+          wTrack.progress = 1 - Math.pow(1 - rawT, 3);
+          if (rawT >= 1) {
+            wTrack.progress = 1;
+          } else {
+            hasActive = true;
+          }
+        }
+      });
+
+      setAnim3DTick((v) => (v + 1) % 1000000);
+      if (hasActive) {
+        rafId = requestAnimationFrame(step);
+      }
+    };
+
+    const anyRolling = Object.values(pieceRollTracksRef.current).some((t) => t.isRolling);
+    const anyRising = Object.values(wallRiseTracksRef.current).some((w) => w.progress < 1);
+    if (anyRolling || anyRising) {
+      rafId = requestAnimationFrame(step);
+    }
+
+    return () => {
+      if (rafId !== null) cancelAnimationFrame(rafId);
+    };
+  }, [players, walls, boardRatio]);
+
   const renderWall = (w: Wall) => {
     if (!w.id.includes('|')) {
       // Burnt cell in Amazons is now rendered via getCellColor
@@ -485,25 +804,72 @@ const Board: React.FC<BoardProps> = ({
     const deltaX = l2 - l1;
     
     const angle = Math.atan2(deltaY, deltaX * boardRatio) * (180 / Math.PI);
+    const wallColor = PLAYER_COLORS[w.ownerId];
+    // 24px max height at 38° max tilt, scaled by bottom-to-top riseProgress (0 -> 1)
+    const riseProgress = wallRiseTracksRef.current[w.id]?.progress ?? 1;
+    const fullWall3DHeightPx = isWallGo3D ? Math.round(24 * Math.min(1, Math.max(0.65, wallGoTiltX / 34))) : 0;
+    const wall3DHeightPx = fullWall3DHeightPx * riseProgress;
+    const baseZPx = isWallGo3D ? (2.5 * Math.min(1, riseProgress * 1.8)).toFixed(2) : '0';
 
     return (
       <div 
         key={w.id}
-        className="absolute z-20 rounded-full"
+        className="absolute z-20 rounded-full pointer-events-none"
         style={{
           top: `${midTop}%`,
           left: `${midLeft}%`,
-          width: isHex ? '6px' : '6px',
+          width: isHex ? '6px' : isWallGo3D ? '8px' : '6px',
           height: `${wallHeightPerc}%`, 
-          backgroundColor: PLAYER_COLORS[w.ownerId],
-          transform: `translate(-50%, -50%) rotate(${angle}deg)`,
+          backgroundColor: wallColor,
+          opacity: isWallGo3D ? Math.min(1, 0.25 + riseProgress * 0.75) : 1,
+          transform: isWallGo3D
+            ? `translate(-50%, -50%) rotate(${angle}deg) translateZ(${baseZPx}px)`
+            : `translate(-50%, -50%) rotate(${angle}deg)`,
+          transformStyle: isWallGo3D ? 'preserve-3d' : undefined,
           boxShadow: isHex 
-            ? `0 0 5px ${PLAYER_COLORS[w.ownerId]}, inset 0 0 4px rgba(0,0,0,0.5)` 
-            : `0 0 10px ${PLAYER_COLORS[w.ownerId]}`,
+            ? `0 0 5px ${wallColor}, inset 0 0 4px rgba(0,0,0,0.5)` 
+            : isWallGo3D
+              ? `0 0 6px ${wallColor}`
+              : `0 0 10px ${wallColor}`,
           border: isHex ? '1px solid rgba(255,255,255,0.4)' : 'none',
-          borderRadius: '2px'
+          borderRadius: '3px'
         }}
-      />
+      >
+        {isWallGo3D && fullWall3DHeightPx > 0 && (
+          <>
+            {/* Sub-pixel dense parallel 3D Z-slices (14 layers) extruding from bottom (0px) to top (wall3DHeightPx) */}
+            {[0.07, 0.14, 0.21, 0.28, 0.35, 0.42, 0.49, 0.56, 0.63, 0.70, 0.77, 0.84, 0.91, 0.96].map((ratio, layerIdx) => {
+              const shadeAlpha = (1 - ratio) * 0.52;
+              return (
+                <div
+                  key={layerIdx}
+                  className="pointer-events-none"
+                  style={{
+                    position: 'absolute',
+                    inset: 0,
+                    background: `linear-gradient(rgba(0,0,0,${shadeAlpha.toFixed(2)}), rgba(0,0,0,${shadeAlpha.toFixed(2)})), ${wallColor}`,
+                    transform: `translateZ(${(wall3DHeightPx * ratio).toFixed(2)}px)`,
+                    borderRadius: '3px',
+                  }}
+                />
+              );
+            })}
+            {/* 3D Wall Glowing Top Ridge Cap rising from bottom (0px) to top (wall3DHeightPx) */}
+            <div
+              className="pointer-events-none"
+              style={{
+                position: 'absolute',
+                inset: 0,
+                backgroundColor: wallColor,
+                transform: `translateZ(${wall3DHeightPx.toFixed(2)}px)`,
+                borderRadius: '3px',
+                border: '1.5px solid rgba(255,255,255,0.88)',
+                boxShadow: `0 0 ${Math.round(4 + 6 * riseProgress)}px ${wallColor}`,
+              }}
+            />
+          </>
+        )}
+      </div>
     );
   };
 
@@ -527,8 +893,8 @@ const Board: React.FC<BoardProps> = ({
     }
 
     if (theme === 'hex') {
-      const pId = players.find(p => p.positions.some(pos => pos.r === r && pos.c === c))?.id;
-      if (pId) return `${PLAYER_COLORS[pId]}`; // Solid color for hex cells occupied by players
+      const occPlayer = players.find(p => p.positions.some(pos => pos.r === r && pos.c === c));
+      if (occPlayer) return occPlayer.color || `${PLAYER_COLORS[occPlayer.id]}`; // Solid color for hex cells occupied by players
     }
 
     if (gameMode !== 'pente' && gameMode !== 'orbito' && gameMode !== 'abalone' && gameMode !== 'hex' && gameMode !== 'corsa') {
@@ -538,6 +904,7 @@ const Board: React.FC<BoardProps> = ({
     
     if (theme.startsWith('abalone')) return 'rgba(0,0,0,0.6)';
     if (theme.startsWith('baduk')) return 'transparent'; // Let the background of boardBgClass shine through for the cells
+    if (isWallGo3D) return 'rgba(255,255,255,0.16)';
     return 'rgba(255,255,255,0.08)';
   };
 
@@ -718,6 +1085,51 @@ const Board: React.FC<BoardProps> = ({
       };
     }
 
+    if (isWallGo3D && !winner) {
+      const radZ = (wallGoRotateZ * Math.PI) / 180;
+      const radX = (wallGoTiltX * Math.PI) / 180;
+      const cosZ = Math.cos(radZ);
+      const sinZ = Math.sin(radZ);
+      const sinX = Math.sin(radX);
+      const h = 1 / boardRatio;
+      const rho = 0.20;
+      const corners: [number, number][] = [
+        [-1, -h],
+        [1, -h],
+        [1, h],
+        [-1, h],
+      ];
+      let minProjX = Infinity;
+      let maxProjX = -Infinity;
+      for (const [cx, cy] of corners) {
+        const x1 = cx * cosZ - cy * sinZ;
+        const y1 = cx * sinZ + cy * cosZ;
+        const projX = x1 / Math.max(0.5, 1 - rho * y1 * sinX);
+        if (projX < minProjX) minProjX = projX;
+        if (projX > maxProjX) maxProjX = projX;
+      }
+      const halfSpanX = Math.max(0.5, (maxProjX - minProjX) * 0.5);
+      const midProjX = (maxProjX + minProjX) * 0.5;
+      const dynamic3DScale = 0.994 / halfSpanX;
+      const shiftXPct = -midProjX * dynamic3DScale * 50;
+
+      if (selectedPieceIndex !== null && isActuallyUserTurn && isWallBreakingMode && isSelectedPieceEnclosed) {
+        const p = currentPlayer.positions[selectedPieceIndex];
+        const posStyle = getPosStyle(p);
+        return {
+          transform: `translateX(${shiftXPct.toFixed(2)}%) perspective(950px) scale(${(dynamic3DScale * 1.25).toFixed(3)}) rotateX(${wallGoTiltX.toFixed(1)}deg) rotateZ(${wallGoRotateZ.toFixed(1)}deg)`,
+          transformOrigin: `${posStyle.left} ${posStyle.top}`,
+          transformStyle: 'preserve-3d' as const,
+        };
+      }
+
+      return {
+        transform: `translateX(${shiftXPct.toFixed(2)}%) perspective(950px) scale(${dynamic3DScale.toFixed(3)}) rotateX(${wallGoTiltX.toFixed(1)}deg) rotateZ(${wallGoRotateZ.toFixed(1)}deg)`,
+        transformOrigin: 'center center',
+        transformStyle: 'preserve-3d' as const,
+      };
+    }
+
     if (selectedPieceIndex !== null && isActuallyUserTurn) {
       const p = currentPlayer.positions[selectedPieceIndex];
       const posStyle = getPosStyle(p);
@@ -744,8 +1156,34 @@ const Board: React.FC<BoardProps> = ({
   };
 
   return (
+    <>
+    {isWallGo3D && (
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          setWallGoTiltX(0);
+          setWallGoRotateZ(0);
+        }}
+        onPointerDown={(e) => e.stopPropagation()}
+        className="absolute top-2 right-2 z-[260] px-3 py-1.5 rounded-xl bg-slate-900/95 hover:bg-slate-800 border border-amber-400/70 text-amber-300 font-black text-xs uppercase tracking-wider shadow-[0_0_20px_rgba(0,0,0,0.85)] flex items-center gap-1.5 active:scale-95 transition-all cursor-pointer"
+        title="Torna alla vista 2D"
+      >
+        <span>🔄</span>
+        <span>2D</span>
+      </button>
+    )}
     <div 
       onPointerDown={(e) => {
+        if (isWallGoMode && !(gameMode === 'corsa' && corsaAction === 'wall') && !winner && status !== 'ended' && status !== 'scoring' && e.isPrimary) {
+          wallGoDragRef.current = {
+            active: true,
+            lastX: e.clientX,
+            lastY: e.clientY,
+            totalDist: 0,
+            wasDragged: false,
+          };
+        }
         if (hexZoomCell && e.isPrimary) {
           setIsPanning(true);
           setLastPanPos({ x: e.clientX, y: e.clientY });
@@ -753,17 +1191,66 @@ const Board: React.FC<BoardProps> = ({
         }
       }}
       onPointerUp={() => { 
+        if (wallGoDragRef.current.active) {
+          wallGoDragRef.current.active = false;
+          setIsDraggingWallGo3D(false);
+          setTimeout(() => {
+            wallGoDragRef.current.wasDragged = false;
+            wasBoardDraggedRef.current = false;
+          }, 50);
+        }
         setIsDraggingFugaWall(false); setIsDraggingAbalone(false); 
         setIsPanning(false);
         setTimeout(() => setHasPanned(false), 50);
       }}
+      onPointerCancel={() => {
+        wallGoDragRef.current.active = false;
+        wallGoDragRef.current.wasDragged = false;
+        wasBoardDraggedRef.current = false;
+        setIsDraggingWallGo3D(false);
+        setIsPanning(false);
+        setHasPanned(false);
+      }}
       onPointerLeave={(e) => { 
         if (e.pointerType === 'mouse') {
           setIsDraggingFugaWall(false); setIsDraggingAbalone(false); 
+          if (wallGoDragRef.current.active) {
+            wallGoDragRef.current.active = false;
+            setIsDraggingWallGo3D(false);
+            setTimeout(() => {
+              wallGoDragRef.current.wasDragged = false;
+              wasBoardDraggedRef.current = false;
+            }, 50);
+          }
         }
         setIsPanning(false);
       }}
       onPointerMove={(e) => {
+        if (isWallGoMode && !(gameMode === 'corsa' && corsaAction === 'wall') && !isDraggingFugaWall && wallGoDragRef.current.active && !winner && status !== 'ended' && status !== 'scoring' && e.isPrimary) {
+          const dx = e.clientX - wallGoDragRef.current.lastX;
+          const dy = e.clientY - wallGoDragRef.current.lastY;
+          wallGoDragRef.current.lastX = e.clientX;
+          wallGoDragRef.current.lastY = e.clientY;
+          wallGoDragRef.current.totalDist += Math.hypot(dx, dy);
+
+          if (wallGoDragRef.current.totalDist > 6) {
+            if (!wallGoDragRef.current.wasDragged) {
+              wallGoDragRef.current.wasDragged = true;
+              wasBoardDraggedRef.current = true;
+              setIsDraggingWallGo3D(true);
+              setHasPanned(true);
+              setHexZoomCell(null);
+            }
+            setWallGoRotateZ((prev) => prev - dx * 0.48);
+            setWallGoTiltX((prev) => {
+              // Maximum 3D tilt capped at 38° as shown in the reference screenshot
+              const baseTilt = prev < 10 ? 34 : prev;
+              const nextTilt = Math.max(0, Math.min(38, baseTilt - dy * 0.32));
+              return nextTilt < 5 && dy > 2 ? 0 : nextTilt;
+            });
+          }
+          return;
+        }
         if (isPanning && hexZoomCell && e.isPrimary) {
           const dx = e.clientX - lastPanPos.x;
           const dy = e.clientY - lastPanPos.y;
@@ -775,40 +1262,63 @@ const Board: React.FC<BoardProps> = ({
         }
       }}
       onClick={() => {
-        if (hasPanned) return;
+        if (hasPanned || wasBoardDraggedRef.current) return;
         if (gameMode === 'hex' || gameMode === 'pente' || gameMode === 'baduk') {
           setHexZoomCell(null);
           setPanOffset({ x: 0, y: 0 });
         }
       }}
-      className={`relative p-0.5 shadow-[0_0_50px_rgba(0,0,0,0.7)] mx-auto select-none shrink-0 ${boardBgClass} ${className || ''} ${theme.startsWith('abalone') ? 'touch-none' : 'rounded-[1.5rem] border-[2px] border-[#fef08a]'} ${gameMode === 'corsa' || gameMode === 'hex' || gameMode === 'pente' || gameMode === 'baduk' ? 'touch-none' : ''} ${hasPanned || isPanning ? 'transition-none' : 'transition-all duration-300 ease-in-out'}`} 
+      className={`relative p-0.5 shadow-[0_0_50px_rgba(0,0,0,0.7)] mx-auto select-none shrink-0 ${boardBgClass} ${className || ''} ${theme.startsWith('abalone') ? 'touch-none' : 'rounded-[1.5rem] border-[2px] border-[#fef08a]'} ${isWallGoMode || gameMode === 'hex' || gameMode === 'pente' || gameMode === 'baduk' ? 'touch-none' : ''} ${hasPanned || isPanning || isDraggingWallGo3D ? 'transition-none' : 'transition-all duration-300 ease-in-out'} ${isWallGoMode ? ((gameMode === 'corsa' && corsaAction === 'wall') || ((gameMode === 'dominio' || gameMode === 'amazons') && turnPhase === 'walling') ? 'cursor-pointer' : (isDraggingWallGo3D ? 'cursor-grabbing' : 'cursor-grab')) : ''}`} 
       style={{ 
         width: '100%',
         height: '100%',
-        maxHeight: `min(100cqh, calc(100cqw / ${boardRatio}))`,
-        maxWidth: `min(100cqw, calc(100cqh * ${boardRatio}), ${theme === 'desert' ? '1400px' : '550px'})`,
+        maxHeight: isWallGo3D ? `calc(100cqw / ${boardRatio})` : `min(100cqh, calc(100cqw / ${boardRatio}))`,
+        maxWidth: isWallGo3D ? `min(100cqw, ${theme === 'desert' ? '1400px' : '550px'})` : `min(100cqw, calc(100cqh * ${boardRatio}), ${theme === 'desert' ? '1400px' : '550px'})`,
         clipPath: theme.startsWith('abalone') ? 'polygon(22% 0%, 78% 0%, 100% 50%, 78% 100%, 22% 100%, 0% 50%)' : 'none',
         aspectRatio: `${boardRatio}/1`,
         ...getZoomStyle(),
         ...style
       }}
     >
+      {/* 3D Extruded Tabletop Base Slab & Ambient Floor Shadow when Wall Go 3D mode is active */}
+      {isWallGo3D && (
+        <>
+          <div
+            className="absolute inset-0 rounded-[1.5rem] pointer-events-none"
+            style={{
+              backgroundColor: '#1e293b',
+              border: '2px solid #ca8a04',
+              transform: 'translateZ(-7px)',
+              boxShadow: 'inset 0 0 18px rgba(0,0,0,0.75)',
+            }}
+          />
+          <div
+            className="absolute inset-0 rounded-[1.5rem] pointer-events-none"
+            style={{
+              backgroundColor: '#0f172a',
+              border: '2px solid #854d0e',
+              transform: 'translateZ(-14px)',
+              boxShadow: '0 26px 45px rgba(0,0,0,0.88)',
+            }}
+          />
+        </>
+      )}
       <div 
         className="relative w-full h-full"
+        style={{ transformStyle: isWallGo3D ? 'preserve-3d' : undefined }}
         onPointerMove={(e) => {
           if (!isDraggingFugaWall || !onPreviewFugaWall || gameMode !== 'corsa' || corsaAction !== 'wall') return;
           // Su mobile onPointerEnter non parte durante il drag. Usiamo elementFromPoint
           const touch = e;
-          const el = document.elementFromPoint(touch.clientX, touch.clientY);
+          const rawEl = document.elementFromPoint(touch.clientX, touch.clientY);
+          const el = rawEl?.closest?.('[data-r]') || rawEl;
           if (el) {
              const rStr = el.getAttribute('data-r');
              const cStr = el.getAttribute('data-c');
              if (rStr !== null && cStr !== null) {
-                const hoverR = parseInt(rStr, 10);
-                const hoverC = parseInt(cStr, 10);
-                if (hoverR < GRID_SIZE - 1 && hoverC < GRID_SIZE - 1) {
-                   onPreviewFugaWall(hoverR, hoverC, fugaWallPreview?.orientation || 'h');
-                }
+                const hoverR = Math.min(parseInt(rStr, 10), GRID_SIZE - 2);
+                const hoverC = Math.min(parseInt(cStr, 10), GRID_SIZE - 2);
+                onPreviewFugaWall(hoverR, hoverC, fugaWallPreview?.orientation || 'h');
              }
           }
         }}
@@ -826,18 +1336,66 @@ const Board: React.FC<BoardProps> = ({
           return (
             <div className="absolute inset-0 pointer-events-none z-0">
               {/* Dark Board Top-Left */}
-              <div className={`absolute top-[0%] left-[0%] w-[44.44%] h-[44.44%] ${theme === 'shobu' ? 'bg-[#a27448] border-[#6b2c2c]' : 'bg-[#334155] border-[#1e293b]'} border-[4px] rounded-tl-[2.2rem] rounded-tr-xl rounded-bl-xl rounded-br-xl shadow-[inset_0_0_40px_rgba(0,0,0,0.5)] transition-all duration-300 ${hlTL ? 'border-amber-300 animate-pulse z-10 shadow-[0_0_15px_rgba(252,211,77,0.6)]' : ''}`} />
+              <div
+                className={`absolute top-[0%] left-[0%] w-[44.44%] h-[44.44%] ${theme === 'shobu' ? 'bg-[#a27448] border-[#6b2c2c]' : 'bg-[#334155] border-[#1e293b]'} border-[4px] rounded-tl-[2.2rem] rounded-tr-xl rounded-bl-xl rounded-br-xl shadow-[inset_0_0_40px_rgba(0,0,0,0.5)] transition-all duration-300 ${hlTL ? 'border-amber-300 animate-pulse z-10 shadow-[0_0_15px_rgba(252,211,77,0.6)]' : ''}`}
+                style={
+                  isWallGo3D && !hlTL
+                    ? {
+                        boxShadow:
+                          theme === 'shobu'
+                            ? '0 5px 0 #4a1e1e, 0 9px 18px rgba(0,0,0,0.65), inset 0 0 40px rgba(0,0,0,0.5)'
+                            : '0 5px 0 #0f172a, 0 9px 18px rgba(0,0,0,0.65), inset 0 0 40px rgba(0,0,0,0.5)',
+                      }
+                    : undefined
+                }
+              />
               
               {/* Light Board Top-Right */}
-              <div className={`absolute top-[0%] right-[0%] w-[44.44%] h-[44.44%] ${theme === 'shobu' ? 'bg-[#e8cda6] border-[#c4a476]' : 'bg-[#f1f5f9] border-[#cbd5e1]'} border-[4px] rounded-tr-[2.2rem] rounded-tl-xl rounded-bl-xl rounded-br-xl overflow-hidden transition-all duration-300 ${hlTR ? 'border-amber-400 animate-pulse z-10 shadow-[0_0_15px_rgba(251,191,36,0.6)]' : 'shadow-[inset_0_0_40px_rgba(0,0,0,0.15)]'}`}>
+              <div
+                className={`absolute top-[0%] right-[0%] w-[44.44%] h-[44.44%] ${theme === 'shobu' ? 'bg-[#e8cda6] border-[#c4a476]' : 'bg-[#f1f5f9] border-[#cbd5e1]'} border-[4px] rounded-tr-[2.2rem] rounded-tl-xl rounded-bl-xl rounded-br-xl overflow-hidden transition-all duration-300 ${hlTR ? 'border-amber-400 animate-pulse z-10 shadow-[0_0_15px_rgba(251,191,36,0.6)]' : 'shadow-[inset_0_0_40px_rgba(0,0,0,0.15)]'}`}
+                style={
+                  isWallGo3D && !hlTR
+                    ? {
+                        boxShadow:
+                          theme === 'shobu'
+                            ? '0 5px 0 #8c6d43, 0 9px 18px rgba(0,0,0,0.65), inset 0 0 40px rgba(0,0,0,0.18)'
+                            : '0 5px 0 #64748b, 0 9px 18px rgba(0,0,0,0.65), inset 0 0 40px rgba(0,0,0,0.18)',
+                      }
+                    : undefined
+                }
+              >
                  <div className={`absolute inset-0 opacity-20 ${theme === 'shobu' ? 'bg-[repeating-linear-gradient(90deg,transparent,transparent_20px,rgba(0,0,0,0.05)_20px,rgba(0,0,0,0.05)_40px)]' : ''}`} />
               </div>
               
               {/* Dark Board Bottom-Left */}
-              <div className={`absolute bottom-[0%] left-[0%] w-[44.44%] h-[44.44%] ${theme === 'shobu' ? 'bg-[#a27448] border-[#6b2c2c]' : 'bg-[#334155] border-[#1e293b]'} border-[4px] rounded-bl-[2.2rem] rounded-tl-xl rounded-br-xl rounded-tr-xl shadow-[inset_0_0_40px_rgba(0,0,0,0.5)] transition-all duration-300 ${hlBL ? 'border-amber-300 animate-pulse z-10 shadow-[0_0_15px_rgba(252,211,77,0.6)]' : ''}`} />
+              <div
+                className={`absolute bottom-[0%] left-[0%] w-[44.44%] h-[44.44%] ${theme === 'shobu' ? 'bg-[#a27448] border-[#6b2c2c]' : 'bg-[#334155] border-[#1e293b]'} border-[4px] rounded-bl-[2.2rem] rounded-tl-xl rounded-br-xl rounded-tr-xl shadow-[inset_0_0_40px_rgba(0,0,0,0.5)] transition-all duration-300 ${hlBL ? 'border-amber-300 animate-pulse z-10 shadow-[0_0_15px_rgba(252,211,77,0.6)]' : ''}`}
+                style={
+                  isWallGo3D && !hlBL
+                    ? {
+                        boxShadow:
+                          theme === 'shobu'
+                            ? '0 5px 0 #4a1e1e, 0 9px 18px rgba(0,0,0,0.65), inset 0 0 40px rgba(0,0,0,0.5)'
+                            : '0 5px 0 #0f172a, 0 9px 18px rgba(0,0,0,0.65), inset 0 0 40px rgba(0,0,0,0.5)',
+                      }
+                    : undefined
+                }
+              />
               
               {/* Light Board Bottom-Right */}
-              <div className={`absolute bottom-[0%] right-[0%] w-[44.44%] h-[44.44%] ${theme === 'shobu' ? 'bg-[#e8cda6] border-[#c4a476]' : 'bg-[#f1f5f9] border-[#cbd5e1]'} border-[4px] rounded-br-[2.2rem] rounded-tr-xl rounded-bl-xl rounded-tl-xl overflow-hidden transition-all duration-300 ${hlBR ? 'border-amber-400 animate-pulse z-10 shadow-[0_0_15px_rgba(251,191,36,0.6)]' : 'shadow-[inset_0_0_40px_rgba(0,0,0,0.15)]'}`}>
+              <div
+                className={`absolute bottom-[0%] right-[0%] w-[44.44%] h-[44.44%] ${theme === 'shobu' ? 'bg-[#e8cda6] border-[#c4a476]' : 'bg-[#f1f5f9] border-[#cbd5e1]'} border-[4px] rounded-br-[2.2rem] rounded-tr-xl rounded-bl-xl rounded-tl-xl overflow-hidden transition-all duration-300 ${hlBR ? 'border-amber-400 animate-pulse z-10 shadow-[0_0_15px_rgba(251,191,36,0.6)]' : 'shadow-[inset_0_0_40px_rgba(0,0,0,0.15)]'}`}
+                style={
+                  isWallGo3D && !hlBR
+                    ? {
+                        boxShadow:
+                          theme === 'shobu'
+                            ? '0 5px 0 #8c6d43, 0 9px 18px rgba(0,0,0,0.65), inset 0 0 40px rgba(0,0,0,0.18)'
+                            : '0 5px 0 #64748b, 0 9px 18px rgba(0,0,0,0.65), inset 0 0 40px rgba(0,0,0,0.18)',
+                      }
+                    : undefined
+                }
+              >
                  <div className={`absolute inset-0 opacity-20 ${theme === 'shobu' ? 'bg-[repeating-linear-gradient(90deg,transparent,transparent_20px,rgba(0,0,0,0.05)_20px,rgba(0,0,0,0.05)_40px)]' : ''}`} />
               </div>
             </div>
@@ -859,26 +1417,32 @@ const Board: React.FC<BoardProps> = ({
                 onPointerDown={(e) => {
                   if (gameMode === 'corsa' && corsaAction === 'wall' && onPreviewFugaWall && !winner && isActuallyUserTurn) {
                     setIsDraggingFugaWall(true);
-                    if (r < GRID_SIZE - 1 && c < GRID_SIZE - 1) {
-                      onPreviewFugaWall(r, c, fugaWallPreview?.orientation || 'h');
-                    }
+                    const targetR = Math.min(r, GRID_SIZE - 2);
+                    const targetC = Math.min(c, GRID_SIZE - 2);
+                    onPreviewFugaWall(targetR, targetC, fugaWallPreview?.orientation || 'h');
                   }
                 }}
                 onPointerEnter={(e) => {
                   if (isDraggingFugaWall && gameMode === 'corsa' && corsaAction === 'wall' && onPreviewFugaWall && !winner && isActuallyUserTurn) {
-                    if (r < GRID_SIZE - 1 && c < GRID_SIZE - 1) {
-                      onPreviewFugaWall(r, c, fugaWallPreview?.orientation || 'h');
-                    }
+                    const targetR = Math.min(r, GRID_SIZE - 2);
+                    const targetC = Math.min(c, GRID_SIZE - 2);
+                    onPreviewFugaWall(targetR, targetC, fugaWallPreview?.orientation || 'h');
                   }
                 }}
                 onClick={(e) => {
                   e.stopPropagation();
-                  if (hasPanned) return;
+                  if (hasPanned || wasBoardDraggedRef.current) return;
                   if (!isActuallyUserTurn || winner) return;
 
                   if (gameMode === 'hex' || gameMode === 'pente' || gameMode === 'baduk') {
                     const isOccupied = players.some(p => p.positions.some(pos => pos.r === r && pos.c === c));
                     if (isOccupied) return;
+
+                    if (gameMode === 'baduk' && theme === 'baduk-9' && isWallGo3D) {
+                      onPlacePiece(r, c);
+                      setHexZoomCell(null);
+                      return;
+                    }
 
                     if (hexZoomCell?.r !== r || hexZoomCell?.c !== c) {
                       setHexZoomCell({ r, c });
@@ -928,14 +1492,14 @@ const Board: React.FC<BoardProps> = ({
                   }
                   else if ((gameMode === 'dominio' || gameMode === 'amazons') && wallOptions.some(w => w.r === r && w.c === c)) onPlaceWall(r, c);
                   else if (gameMode === 'corsa' && corsaAction === 'wall' && onPreviewFugaWall) {
+                    const targetR = Math.min(r, GRID_SIZE - 2);
+                    const targetC = Math.min(c, GRID_SIZE - 2);
                     // Cliccando sulla stessa casella ruota il muro (se non stavamo solo trascinando)
-                    if (fugaWallPreview?.r === r && fugaWallPreview?.c === c) {
+                    if (fugaWallPreview?.r === targetR && fugaWallPreview?.c === targetC) {
                       const nextOrientation = fugaWallPreview.orientation === 'h' ? 'v' : 'h';
-                      if (r < GRID_SIZE - 1 && c < GRID_SIZE - 1) {
-                        onPreviewFugaWall(r, c, nextOrientation);
-                      }
+                      onPreviewFugaWall(targetR, targetC, nextOrientation);
                     } else {
-                      onSelectPiece(null);
+                      onPreviewFugaWall(targetR, targetC, fugaWallPreview?.orientation || 'h');
                     }
                   } else {
                     if (turnPhase === 'walling') return;
@@ -949,12 +1513,12 @@ const Board: React.FC<BoardProps> = ({
                     onSelectPiece(null);
                   }
                 }}
-                className={`absolute flex items-center justify-center transition-all duration-500 overflow-hidden cursor-pointer active:scale-95 hover:brightness-125 z-10 touch-none`}
+                className={`absolute flex items-center justify-center transition-colors duration-200 ${isWallGoMode ? "overflow-visible before:content-[''] before:absolute before:-inset-[6%] hover:bg-white/25" : 'overflow-hidden active:scale-95 hover:brightness-125'} cursor-pointer z-10 touch-none`}
                 style={{
                   ...style,
                   width: theme.startsWith('abalone') ? `${pieceWidthPerc}%` : `${hexWidthPerc}%`,
                   height: theme.startsWith('abalone') ? `${pieceWidthPerc * boardRatio}%` : `${hexHeightPerc}%`,
-                  transform: 'translate(-50%, -50%)',
+                  transform: isWallGo3D ? 'translate(-50%, -50%) translateZ(2px)' : 'translate(-50%, -50%)',
                   backgroundColor: color,
                   clipPath: (isHex && !theme.startsWith('abalone')) ? 'polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)' : (theme.startsWith('abalone') ? 'circle(50% at 50% 50%)' : 'none'),
                   borderRadius: (isHex && !theme.startsWith('abalone')) ? '0' : (theme.startsWith('abalone') ? '50%' : '6px'),
@@ -1056,7 +1620,10 @@ const Board: React.FC<BoardProps> = ({
         ))}
 
         {(theme === 'shobu' || theme === 'shobu-scacchiera') && (
-          <div className="absolute inset-0 pointer-events-none z-[15]">
+          <div
+            className="absolute inset-0 pointer-events-none z-[15]"
+            style={{ transform: isWallGo3D ? 'translateZ(3.5px)' : undefined }}
+          >
             <svg viewBox="0 0 100 100" className="w-full h-full drop-shadow-[0_8px_6px_rgba(0,0,0,0.8)]">
               <defs>
                 <pattern id="rope-pattern" width="2" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(25)">
@@ -1143,13 +1710,14 @@ const Board: React.FC<BoardProps> = ({
                    e.stopPropagation();
                 }
               }}
-              className={`absolute z-[35] transition-all touch-none flex items-center justify-center ${isDraggingFugaWall ? 'pointer-events-none' : 'cursor-grab animate-pulse hover:scale-105'}`}
+              className={`absolute z-[35] transition-all touch-none flex items-center justify-center ${isDraggingFugaWall ? 'pointer-events-none' : 'cursor-pointer animate-pulse hover:scale-105'}`}
               style={{
                 top: `${topPerc}%`,
                 left: `${leftPerc}%`,
                 width: orientation === 'h' ? `${hexWidthPerc * 2}%` : '50px',
                 height: orientation === 'h' ? '50px' : `${hexHeightPerc * 2}%`, 
-                transform: `translate(-50%, -50%)`,
+                transform: isWallGo3D ? 'translate(-50%, -50%) translateZ(14px)' : 'translate(-50%, -50%)',
+                transformStyle: isWallGo3D ? 'preserve-3d' : undefined,
                 backgroundColor: 'transparent',
               }}
             >
@@ -1158,20 +1726,55 @@ const Board: React.FC<BoardProps> = ({
                   className={`absolute inset-0 rounded-xl transition-all duration-200 pointer-events-none border-[3px] border-dashed border-orange-400 bg-orange-500/20 ${isDraggingFugaWall ? 'scale-125' : 'scale-110'}`}
                />
                
-               {/* Actual Wall Visual */}
+               {/* Actual Wall Visual (with 3D extrusion when Quoridor 3D mode is active) */}
                <div 
-                  className="rounded-full shadow-[0_0_15px_rgba(249,115,22,0.8)] pointer-events-none"
+                  className="relative rounded-full shadow-[0_0_15px_rgba(249,115,22,0.8)] pointer-events-none"
                   style={{
                      width: orientation === 'h' ? '100%' : '8px',
                      height: orientation === 'h' ? '8px' : '100%',
                      backgroundColor: isDraggingFugaWall ? 'rgba(249,115,22, 1)' : 'rgba(249,115,22, 0.8)',
+                     transform: isWallGo3D ? 'translateZ(-11.5px)' : undefined,
+                     transformStyle: isWallGo3D ? 'preserve-3d' : undefined,
                   }}
-               />
+               >
+                  {isWallGo3D && (() => {
+                    const previewWallH = Math.round(24 * Math.min(1, Math.max(0.65, wallGoTiltX / 34)));
+                    return (
+                      <>
+                        {[0.14, 0.28, 0.42, 0.56, 0.70, 0.84, 0.96].map((ratio, idx) => (
+                          <div
+                            key={idx}
+                            className="pointer-events-none"
+                            style={{
+                              position: 'absolute',
+                              inset: 0,
+                              backgroundColor: 'rgba(249, 115, 22, 0.85)',
+                              transform: `translateZ(${(previewWallH * ratio).toFixed(1)}px)`,
+                              borderRadius: '3px',
+                            }}
+                          />
+                        ))}
+                        <div
+                          className="pointer-events-none"
+                          style={{
+                            position: 'absolute',
+                            inset: 0,
+                            backgroundColor: '#f97316',
+                            transform: `translateZ(${previewWallH}px)`,
+                            borderRadius: '3px',
+                            border: '1.5px solid rgba(255,255,255,0.9)',
+                            boxShadow: '0 0 12px rgba(249,115,22,0.9)',
+                          }}
+                        />
+                      </>
+                    );
+                  })()}
+               </div>
 
                {/* Rotate Icon Button */}
                {!isDraggingFugaWall && onPreviewFugaWall && (
                   <button
-                     className="absolute -top-4 -right-4 w-10 h-10 bg-blue-600 border border-blue-400 rounded-full shadow-lg shadow-blue-900/50 text-white flex items-center justify-center pointer-events-auto active:scale-95 transition-transform z-40 touch-none"
+                     className="absolute -top-4 -right-4 w-10 h-10 bg-blue-600 border border-blue-400 rounded-full shadow-lg shadow-blue-900/50 text-white flex items-center justify-center pointer-events-auto cursor-pointer active:scale-95 transition-transform z-40 touch-none"
                      onClick={(e) => {
                         e.stopPropagation();
                         e.preventDefault();
@@ -1194,6 +1797,124 @@ const Board: React.FC<BoardProps> = ({
           );
         })()}
 
+        {/* Natural Elliptical Directional Cast Shadows for Spherical Pieces and 3D Walls in Wall Go 3D */}
+        {isWallGo3D && (() => {
+          const tiltFactor = Math.min(1, Math.max(0.76, wallGoTiltX / 32));
+          // Counter-rotate by -wallGoRotateZ so the shadow always points at -13° in screen space (Left-to-Right +X and slightly Bottom-to-Top -Y, identical to Quarto)
+          const shadowAngleDeg = -13 - wallGoRotateZ;
+          const shadowAngleRad = (shadowAngleDeg * Math.PI) / 180;
+          const pieceRadiusSvg = (pieceWidthPerc * 10) * 0.5;
+
+          // 20% shorter wall shadow to match the 20% lower walls
+          const wallShadowLen = pieceRadiusSvg * 1.95 * tiltFactor;
+          const sdx = Math.cos(shadowAngleRad) * wallShadowLen;
+          const sdy = Math.sin(shadowAngleRad) * wallShadowLen;
+
+          return (
+            <svg
+              viewBox="0 0 1000 1000"
+              preserveAspectRatio="none"
+              className="absolute inset-0 w-full h-full pointer-events-none z-[18] overflow-visible"
+              style={{ transform: 'translateZ(2.5px)', pointerEvents: 'none' }}
+            >
+              <defs>
+                {/* Ambient occlusion contact shadow directly under the sphere's base */}
+                <radialGradient id="wallgo-sphere-ao" cx="50%" cy="50%" r="50%">
+                  <stop offset="0%" stopColor="rgba(2, 4, 10, 0.90)" />
+                  <stop offset="62%" stopColor="rgba(2, 4, 10, 0.58)" />
+                  <stop offset="100%" stopColor="rgba(2, 4, 10, 0)" />
+                </radialGradient>
+                {/* Natural elliptical cast shadow radial gradient (off-center focal point under the sphere fading smoothly to 0 at the ellipse boundary, needing no SVG filter) */}
+                <radialGradient id="wallgo-sphere-cast" cx="50%" cy="50%" r="50%" fx="22%" fy="50%">
+                  <stop offset="0%" stopColor="rgba(2, 4, 12, 0.90)" />
+                  <stop offset="38%" stopColor="rgba(2, 4, 12, 0.74)" />
+                  <stop offset="68%" stopColor="rgba(2, 4, 12, 0.45)" />
+                  <stop offset="88%" stopColor="rgba(2, 4, 12, 0.18)" />
+                  <stop offset="100%" stopColor="rgba(2, 4, 12, 0)" />
+                </radialGradient>
+              </defs>
+
+              {/* Wall Directional Cast Shadows (with full wall thickness so horizontal walls cast a realistic band shadow) */}
+              {walls.map((w) => {
+                if (!w.id.includes('|')) return null;
+                const [p1Str, p2Str] = w.id.split('|');
+                const [r1, c1] = p1Str.split(',').map(Number);
+                const [r2, c2] = p2Str.split(',').map(Number);
+                if (!isValidCell(r1, c1, theme) || !isValidCell(r2, c2, theme)) return null;
+
+                const s1 = getPosStyle({ r: r1, c: c1 });
+                const s2 = getPosStyle({ r: r2, c: c2 });
+                const t1 = parseFloat(s1.top as string);
+                const l1 = parseFloat(s1.left as string);
+                const t2 = parseFloat(s2.top as string);
+                const l2 = parseFloat(s2.left as string);
+
+                const mx = ((l1 + l2) * 0.5) * 10;
+                const my = ((t1 + t2) * 0.5) * 10;
+                const deltaY = t2 - t1;
+                const deltaX = l2 - l1;
+                const wallAngleRad = Math.atan2(deltaY, deltaX * boardRatio) + Math.PI / 2;
+                const halfWallLen = (wallHeightPerc * 10) * 0.5;
+
+                const ax = mx - Math.cos(wallAngleRad) * halfWallLen;
+                const ay = my - Math.sin(wallAngleRad) * halfWallLen;
+                const bx = mx + Math.cos(wallAngleRad) * halfWallLen;
+                const by = my + Math.sin(wallAngleRad) * halfWallLen;
+
+                const riseProgress = wallRiseTracksRef.current[w.id]?.progress ?? 1;
+                const curSdx = sdx * riseProgress;
+                const curSdy = sdy * riseProgress;
+
+                return (
+                  <g key={`wall-shadow-3d-${w.id}`} opacity={Math.min(1, riseProgress * 1.15).toFixed(2)}>
+                    <polygon
+                      points={`${ax.toFixed(1)},${ay.toFixed(1)} ${bx.toFixed(1)},${by.toFixed(1)} ${(bx + curSdx).toFixed(1)},${(by + curSdy).toFixed(1)} ${(ax + curSdx).toFixed(1)},${(ay + curSdy).toFixed(1)}`}
+                      fill="rgba(2, 4, 12, 0.62)"
+                      stroke="rgba(2, 4, 12, 0.42)"
+                      strokeWidth="10"
+                      strokeLinejoin="round"
+                    />
+                  </g>
+                );
+              })}
+
+              {/* Natural Elliptical Sphere Cast Shadows + Contact Ambient Occlusion gliding in sync with rolling 3D spheres */}
+              {players.map((p) =>
+                p.positions.map((pos, idx) => {
+                  const pieceKey = pos.id || `${p.id}-${idx}`;
+                  const track = pieceRollTracksRef.current[pieceKey];
+                  const s = track ? { left: `${track.curLeft}%`, top: `${track.curTop}%` } : getPosStyle(pos);
+                  const cx = parseFloat(s.left as string) * 10;
+                  const cy = parseFloat(s.top as string) * 10;
+                  return (
+                    <g
+                      key={`piece-shadow-3d-${pieceKey}`}
+                      transform={`translate(${cx.toFixed(1)}, ${cy.toFixed(1)}) rotate(${shadowAngleDeg.toFixed(1)})`}
+                    >
+                      {/* Directional Elliptical Cast Shadow */}
+                      <ellipse
+                        cx={(pieceRadiusSvg * 0.96 * tiltFactor).toFixed(1)}
+                        cy="0"
+                        rx={(pieceRadiusSvg * 1.44 * tiltFactor).toFixed(1)}
+                        ry={(pieceRadiusSvg * 0.80).toFixed(1)}
+                        fill="url(#wallgo-sphere-cast)"
+                      />
+                      {/* Contact Ambient Occlusion directly under the sphere base */}
+                      <ellipse
+                        cx={(pieceRadiusSvg * 0.14).toFixed(1)}
+                        cy="0"
+                        rx={(pieceRadiusSvg * 0.78).toFixed(1)}
+                        ry={(pieceRadiusSvg * 0.68).toFixed(1)}
+                        fill="url(#wallgo-sphere-ao)"
+                      />
+                    </g>
+                  );
+                })
+              )}
+            </svg>
+          );
+        })()}
+
         {walls.map(w => renderWall(w))}
 
         {renderAbaloneSelection()}
@@ -1205,10 +1926,12 @@ const Board: React.FC<BoardProps> = ({
             (shobuState?.passiveMove && ((shobuState.passiveMove.boardColor === 'dark' && pos.c < 4) || (shobuState.passiveMove.boardColor === 'light' && pos.c > 4)))
           );
           const isOpponentLastMove = gameMode === 'pente' && !!penteLastOpponentMove && penteLastOpponentMove.r === pos.r && penteLastOpponentMove.c === pos.c;
+          const pieceKey = pos.id || `${p.id}-${i}`;
+          const rollTrack = pieceRollTracksRef.current[pieceKey];
 
           return (
           <Piece 
-            key={pos.id || `${p.id}-${i}`}
+            key={pieceKey}
             player={p} pos={pos} idx={i}
             isOpponentLastMove={isOpponentLastMove}
             startingPlayerIndex={startingPlayerIndex}
@@ -1217,9 +1940,9 @@ const Board: React.FC<BoardProps> = ({
               (gameMode === 'orbito' && orbitoActionState?.playerId === p.id && orbitoActionState?.pieceIdx === i)
             }
             isClickable={!!(isActuallyUserTurn && !winner && (
-              (p.id === currentPlayer?.id && turnPhase === 'moving' && gameMode !== 'corsa' && !isInvalidShobuClick) || 
+              (p.id === currentPlayer?.id && turnPhase === 'moving' && gameMode !== 'corsa' && gameMode !== 'domineering' && !isInvalidShobuClick) || 
               (gameMode === 'orbito' && orbitoPhase === 'shift' && p.id !== currentPlayer?.id) ||
-              (p.id === currentPlayer?.id && turnPhase === 'walling' && gameMode === 'dominio' && selectedPieceIndex === i)
+              (p.id === currentPlayer?.id && turnPhase === 'walling' && (gameMode === 'dominio' || gameMode === 'amazons') && selectedPieceIndex === i)
             ))}
             onRevertMove={onRevertMove}
             isInvalidShobu={isInvalidShobuClick}
@@ -1248,18 +1971,26 @@ const Board: React.FC<BoardProps> = ({
             }}
             onMove={onMove}
             turnPhase={turnPhase}
-            hasPossibleMoves={(gameMode === 'abalone' && abaloneSelectedIndices && abaloneSelectedIndices.includes(i)) ? true : (p.id !== currentPlayer?.id ? true : getReachableCells(pos, walls, players, theme.startsWith('amazons') ? Infinity : 2, theme, gameMode, shobuState?.passiveMove).length > 0)}
+            hasPossibleMoves={gameMode === 'domineering' || gameMode === 'baduk' || (gameMode === 'abalone' && abaloneSelectedIndices && abaloneSelectedIndices.includes(i)) ? true : (p.id !== currentPlayer?.id ? true : (gameMode === 'dominio' ? (getReachableCells(pos, walls, players, 2, theme, gameMode).length > 1 || getWallOptions(pos, walls, theme, players, gameMode).length > 0) : getReachableCells(pos, walls, players, theme.startsWith('amazons') ? Infinity : 2, theme, gameMode, shobuState?.passiveMove).length > 0))}
             isHex={isHex}
             getPosStyle={getPosStyle}
             pieceWidthPerc={pieceWidthPerc}
             boardRatio={boardRatio}
-            canStay={!gameMode?.startsWith('amazons') && gameMode !== 'shobu'}
+            canStay={!gameMode?.startsWith('amazons') && gameMode !== 'shobu' && (gameMode !== 'dominio' || getWallOptions(pos, walls, theme, players, gameMode).length > 0)}
             gameMode={gameMode}
             badukStoneColor={badukStoneColor}
             isDeadBadukStone={gameMode === 'baduk' && (status === 'scoring' || status === 'ended') && badukDeadStones.includes(`${pos.r},${pos.c}`)}
             onToggleDeadStone={(gameMode === 'baduk' && status === 'scoring') ? () => onToggleBadukDeadStone?.(pos.r, pos.c) : undefined}
             isWinningPiece={winningLine?.some((pt: Point) => pt.r === pos.r && pt.c === pos.c)}
             isThreatPiece={threatLines?.some(line => line.some(pt => pt.r === pos.r && pt.c === pos.c))}
+            isWallGo3D={isWallGo3D}
+            boardTiltX={wallGoTiltX}
+            boardRotateZ={wallGoRotateZ}
+            wasBoardDraggedRef={wasBoardDraggedRef}
+            animatedPosStyle={isWallGo3D && rollTrack ? { top: `${rollTrack.curTop}%`, left: `${rollTrack.curLeft}%` } : undefined}
+            rollAngleDeg={rollTrack?.curRollDeg ?? 0}
+            moveAngleBoardDeg={rollTrack?.moveAngleBoardDeg ?? 0}
+            isRolling3D={rollTrack?.isRolling ?? false}
           />
         )}))}
 
@@ -1280,7 +2011,7 @@ const Board: React.FC<BoardProps> = ({
               ...getPosStyle({r: m.r, c: m.c}),
               width: `${pieceWidthPerc}%`,
               height: `${pieceWidthPerc * boardRatio}%`,
-              background: `radial-gradient(circle at 35% 35%, rgba(255,255,255,0.9) 0%, rgba(255,255,255,0.2) 20%, transparent 50%), radial-gradient(circle at 50% 50%, ${m.color} 0%, ${m.color} 70%, rgba(0,0,0,0.4) 100%)`,
+              backgroundImage: `radial-gradient(circle at 35% 35%, rgba(255,255,255,0.9) 0%, rgba(255,255,255,0.2) 20%, transparent 50%), radial-gradient(circle at 50% 50%, ${m.color} 0%, ${m.color} 70%, rgba(0,0,0,0.4) 100%)`,
               backgroundColor: m.color,
               boxShadow: `0 20px 25px -5px ${m.color}80, 0 8px 10px -6px ${m.color}80`,
               ['--push-x' as string]: `${pushX}px`,
@@ -1308,7 +2039,7 @@ const Board: React.FC<BoardProps> = ({
               ...getPosStyle({r: m.r, c: m.c}),
               width: `${pieceWidthPerc}%`,
               height: `${pieceWidthPerc * boardRatio}%`,
-              background: `radial-gradient(circle at 35% 35%, rgba(255,255,255,0.9) 0%, rgba(255,255,255,0.2) 20%, transparent 50%), radial-gradient(circle at 50% 50%, ${m.color} 0%, ${m.color} 70%, rgba(0,0,0,0.4) 100%)`,
+              backgroundImage: `radial-gradient(circle at 35% 35%, rgba(255,255,255,0.9) 0%, rgba(255,255,255,0.2) 20%, transparent 50%), radial-gradient(circle at 50% 50%, ${m.color} 0%, ${m.color} 70%, rgba(0,0,0,0.4) 100%)`,
               backgroundColor: m.color,
               boxShadow: `0 10px 20px rgba(0,0,0,0.5), 0 0 12px ${m.color}44, inset -2px -2px 6px rgba(0,0,0,0.4)`
             }}
@@ -1332,14 +2063,20 @@ const Board: React.FC<BoardProps> = ({
           return (
           <div 
             key={`mv-${idx}`} 
-            className={`absolute -translate-x-1/2 -translate-y-1/2 z-[100] ${m.isAbaloneMove ? 'cursor-pointer pointer-events-auto active:scale-95' : 'pointer-events-none'} flex items-center justify-center`} 
+            className={`absolute ${isWallGo3D ? '' : '-translate-x-1/2 -translate-y-1/2'} z-[100] ${m.isAbaloneMove || isWallGo3D ? 'cursor-pointer pointer-events-auto active:scale-95' : 'pointer-events-none'} flex items-center justify-center`} 
             style={{ 
               ...getPosStyle(m),
               width: `${pieceWidthPerc}%`,
               height: `${pieceWidthPerc * boardRatio}%`,
+              transform: isWallGo3D ? 'translate(-50%, -50%) translateZ(14px)' : undefined,
               clipPath: m.isAbaloneMove ? 'circle(50% at 50% 50%)' : 'none'
             }} 
-            onClick={() => { if (m.isAbaloneMove && isActuallyUserTurn) onMove(m); }}
+            onClick={(e) => {
+              if ((m.isAbaloneMove || isWallGo3D) && isActuallyUserTurn && !winner && !wasBoardDraggedRef.current) {
+                e.stopPropagation();
+                onMove(m);
+              }
+            }}
           >
             {m.isPush ? (
               <div 
@@ -1362,20 +2099,38 @@ const Board: React.FC<BoardProps> = ({
                 </svg>
               </div>
             ) : (
-              <div className="w-[20%] h-[20%] bg-blue-400 rounded-full border border-white shadow-[0_0_10px_#60a5fa] animate-pulse" />
+              <div className="w-[20%] h-[20%] bg-blue-400 rounded-full border border-white shadow-[0_0_10px_#60a5fa] animate-pulse pointer-events-none" />
             )}
           </div>
         )})}
 
         {!winner && wallOptions.length > 0 && wallOptions.map((w, idx) => (
-          <div key={`wl-${idx}`} className="absolute w-[11%] h-[11%] -translate-x-1/2 -translate-y-1/2 z-[100] pointer-events-none flex items-center justify-center" style={getPosStyle(w)}>
-            <div className="w-3 h-3 bg-emerald-400 rounded-full border-2 border-white shadow-[0_0_15px_#34d399] animate-bounce" />
+          <div
+            key={`wl-${idx}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (wasBoardDraggedRef.current) return;
+              if (isActuallyUserTurn && !winner) onPlaceWall(w.r, w.c);
+            }}
+            className={`absolute w-[11%] h-[11%] ${isWallGo3D ? '' : '-translate-x-1/2 -translate-y-1/2'} z-[100] pointer-events-auto cursor-pointer flex items-center justify-center`}
+            style={{
+              ...getPosStyle(w),
+              transform: isWallGo3D ? 'translate(-50%, -50%) translateZ(14px)' : undefined,
+            }}
+          >
+            <div className="w-3 h-3 bg-emerald-400 rounded-full border-2 border-white shadow-[0_0_15px_#34d399] animate-bounce pointer-events-none" />
           </div>
         ))}
 
         {/* Tactical Suggestions */}
         {!winner && suggestedMove && (
-          <div className="absolute w-[10%] h-[10%] -translate-x-1/2 -translate-y-1/2 z-[150] pointer-events-none flex items-center justify-center" style={getPosStyle(suggestedMove)}>
+          <div
+            className={`absolute w-[10%] h-[10%] ${isWallGo3D ? '' : '-translate-x-1/2 -translate-y-1/2'} z-[150] pointer-events-none flex items-center justify-center`}
+            style={{
+              ...getPosStyle(suggestedMove),
+              transform: isWallGo3D ? 'translate(-50%, -50%) translateZ(14px)' : undefined,
+            }}
+          >
             <div className="w-4 h-4 bg-blue-400 rounded-full shadow-[0_0_15px_#60a5fa] animate-ping" />
             <div className="absolute w-2 h-2 bg-white rounded-full" />
           </div>
@@ -1404,7 +2159,7 @@ const Board: React.FC<BoardProps> = ({
                 width: '8px',
                 height: `${wallHeightPerc}%`, 
                 backgroundColor: '#34d399',
-                transform: `translate(-50%, -50%) rotate(${angle}deg)`,
+                transform: isWallGo3D ? `translate(-50%, -50%) rotate(${angle}deg) translateZ(14px)` : `translate(-50%, -50%) rotate(${angle}deg)`,
                 boxShadow: '0 0 20px #34d399, 0 0 10px white, 0 0 40px #34d399',
                 border: '2px solid white'
               }}
@@ -1427,6 +2182,7 @@ const Board: React.FC<BoardProps> = ({
           
           // Calculate length using Pythagorean theorem, compensating for boardRatio
           const length = Math.sqrt(Math.pow(deltaX * boardRatio, 2) + Math.pow(deltaY, 2));
+          const traceZ = isWallGo3D ? 'translateZ(6px) ' : '';
 
           return (
             <div 
@@ -1437,7 +2193,7 @@ const Board: React.FC<BoardProps> = ({
                 width: `${length}%`,
                 height: '4px',
                 backgroundColor: PLAYER_COLORS[players[currentPlayerIndex].id],
-                transform: `rotate(${angle}deg)`,
+                transform: `${traceZ}rotate(${angle}deg)`,
                 transformOrigin: '0 50%',
                 boxShadow: `0 0 15px ${PLAYER_COLORS[players[currentPlayerIndex].id]}`,
                 opacity: 0.8,
@@ -1446,10 +2202,10 @@ const Board: React.FC<BoardProps> = ({
             >
               <style>{`
                 @keyframes aiTraceAnim {
-                  0% { opacity: 1; transform: rotate(${angle}deg) scaleX(0); }
-                  20% { opacity: 1; transform: rotate(${angle}deg) scaleX(1); }
-                  80% { opacity: 1; transform: rotate(${angle}deg) scaleX(1); }
-                  100% { opacity: 0; transform: rotate(${angle}deg) scaleX(1); }
+                  0% { opacity: 1; transform: ${traceZ}rotate(${angle}deg) scaleX(0); }
+                  20% { opacity: 1; transform: ${traceZ}rotate(${angle}deg) scaleX(1); }
+                  80% { opacity: 1; transform: ${traceZ}rotate(${angle}deg) scaleX(1); }
+                  100% { opacity: 0; transform: ${traceZ}rotate(${angle}deg) scaleX(1); }
                 }
               `}</style>
             </div>
@@ -1494,6 +2250,7 @@ const Board: React.FC<BoardProps> = ({
         portalTarget
       )}
     </div>
+    </>
   );
 };
 

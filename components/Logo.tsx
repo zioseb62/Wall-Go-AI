@@ -69,15 +69,28 @@ export const Logo: React.FC<LogoProps> = ({ className = "", size = 120 }) => {
           />
         </g>
 
-        {/* La Pedina (Cilindro centrale) */}
-        <circle cx="50" cy="45" r="9" fill="#ef4444" className="animate-pulse" />
-        <circle cx="50" cy="45" r="9" fill="url(#inner-light)" />
-        <circle cx="47" cy="42" r="2.5" fill="white" fillOpacity="0.6" />
+        {/* La Pedina (Cilindro centrale) con movimento fluido e onda energetica */}
+        <circle cx="50" cy="45" r="9" stroke="#ef4444" strokeWidth="1.5" fill="none">
+          <animate attributeName="r" values="9;19;9" dur="2.4s" repeatCount="indefinite" />
+          <animate attributeName="opacity" values="0.8;0;0.8" dur="2.4s" repeatCount="indefinite" />
+        </circle>
+        <g>
+          <animateTransform
+            attributeName="transform"
+            type="translate"
+            values="0,0; 0,-4; 3,-2; 0,0; -3,-2; 0,0"
+            dur="3s"
+            repeatCount="indefinite"
+          />
+          <circle cx="50" cy="45" r="9" fill="#ef4444" />
+          <circle cx="50" cy="45" r="9" fill="url(#inner-light)" />
+          <circle cx="47" cy="42" r="2.5" fill="white" fillOpacity="0.6" />
+        </g>
 
         <style dangerouslySetInnerHTML={{ __html: `
           @keyframes neon-flicker {
             0%, 18%, 22%, 25%, 53%, 57%, 100% { opacity: 1; filter: drop-shadow(0 0 10px #3b82f6); }
-            20%, 24%, 55% { opacity: 0.6; filter: none; }
+            20%, 24%, 55% { opacity: 0.65; filter: drop-shadow(0 0 4px #10b981); }
           }
         `}} />
       </svg>

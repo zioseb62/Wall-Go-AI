@@ -15,11 +15,17 @@ self.onmessage = (e) => {
         if (!ai || ai.board_size !== size) {
             ai = new MCTSEngine(size);
         } else {
-            // Do not destroy root here, we might just be syncing state.
-            // Wait, if it's a completely new game, boardData will be mostly empty.
             let sum = 0;
-            for(let i=0; i<data.boardData.length; i++) sum += data.boardData[i];
-            if (sum === 0) ai.root = null; // actually new game
+            let boardChanged = !currentBoard || currentBoard.size !== size || currentColor !== data.color;
+            for (let i = 0; i < data.boardData.length; i++) {
+                sum += data.boardData[i];
+                if (!boardChanged && currentBoard && currentBoard.board[i] !== data.boardData[i]) {
+                    boardChanged = true;
+                }
+            }
+            if (sum === 0 || boardChanged) {
+                ai.root = null;
+            }
         }
         currentBoard = new Board(size);
         currentBoard.board = new Int8Array(data.boardData);
@@ -66,29 +72,15 @@ self.onmessage = (e) => {
 
         let move: number | null = null;
         let shouldSearch = true;
+        const stoneCount = currentBoard.stone_count();
 
-        if (currentBoard.consecutive_passes > 0) {
-            const size = currentBoard.size;
-            const players = [
-                { id: 1, positions: [] as any[] },
-                { id: 2, positions: [] as any[] }
-            ];
-            for (let r = 0; r < size; r++) {
-                for (let c = 0; c < size; c++) {
-                    const v = currentBoard.board[r * size + c];
-                    if (v === 1) players[0].positions.push({r, c});
-                    if (v === 2) players[1].positions.push({r, c});
-                }
-            }
-            const theme = size === 19 ? 'baduk-19' : (size === 13 ? 'baduk-13' : 'baduk-9');
-            const terr = calculateTerritory([], players as any, theme as any);
-            const score1 = (terr.scores[1] || 0) + players[0].positions.length;
-            const score2 = (terr.scores[2] || 0) + players[1].positions.length + ai.komi;
+        // Only consider passing immediately in response to an opponent pass if we are genuinely in the endgame
+        if (currentBoard.consecutive_passes > 0 && stoneCount >= Math.floor(currentBoard.n * 0.45)) {
+            const { black, white } = currentBoard.score();
+            const myScore = currentColor === BLACK ? black : white;
+            const oppScore = currentColor === BLACK ? white : black;
             
-            const myScore = currentColor === 1 ? score1 : score2;
-            const oppScore = currentColor === 1 ? score2 : score1;
-            
-            if (myScore > oppScore) {
+            if (myScore > oppScore + 1.5) {
                 move = null;
                 shouldSearch = false;
             }
@@ -96,12 +88,19 @@ self.onmessage = (e) => {
 
         if (shouldSearch) {
             move = ai.get_move(currentBoard, currentColor, data.timeBudget);
-            if (currentBoard.consecutive_passes > 0 && move !== null && ai._last_stats && ai._last_stats.children && ai._last_stats.children.length > 0) {
+            if (
+                currentBoard.consecutive_passes > 0 &&
+                stoneCount >= Math.floor(currentBoard.n * 0.65) &&
+                move !== null &&
+                ai._last_stats &&
+                ai._last_stats.children &&
+                ai._last_stats.children.length > 0
+            ) {
                 const bestQStr = ai._last_stats.children[0][2];
                 if (bestQStr) {
                     const bestQ = parseFloat(bestQStr);
-                    if (bestQ < 0.10) {
-                        move = null; // Concede
+                    if (bestQ < 0.02) {
+                        move = null; // Concede only in hopeless late endgame after opponent pass
                     }
                 }
             }

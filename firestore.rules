@@ -60,6 +60,13 @@ service cloud.firestore {
              data.totalScore is number;
     }
 
+    function isValidAppConfig() {
+      let data = request.resource.data;
+      return data.keys().hasAll(['requirePointsToUnlock']) &&
+             data.requirePointsToUnlock is bool &&
+             (!('updatedAt' in data) || isValidDateString(data.updatedAt));
+    }
+
     // ===============================================================
     // Rules
     // ===============================================================
@@ -102,6 +109,13 @@ service cloud.firestore {
       allow create: if true;
       allow update: if true;
       allow delete: if true;
+    }
+
+    match /app_config/{configId} {
+      allow read: if true;
+      allow create: if isValidAppConfig();
+      allow update: if isValidAppConfig();
+      allow delete: if false;
     }
   }
 }

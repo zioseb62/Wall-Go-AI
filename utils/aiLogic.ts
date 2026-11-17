@@ -1,6 +1,6 @@
 
 import { Point, PlayerId, Wall, GameState, AIAction, Player, Difficulty } from '../types';
-import { GRID_SIZE } from '../constants';
+import { GRID_SIZE, PLAYER_COLORS } from '../constants';
 import { getReachableCells, getWallOptions, calculateTerritory, serializeWall, hasWall, getWallBetween, removeWall, getNeighbors, isValidCell, isValidFugaWall, getAbalonePossibleMoves, getAbaloneUV, AbaloneMove } from './gameLogic';
 
 const getDistancesMap = (start: Point, walls: Wall[], theme: any): number[][] => {
@@ -616,14 +616,17 @@ export const getBestAbaloneMoveForAI = (gameState: GameState, playerId: PlayerId
              // This can be complex, so we just add a small random bonus to non-pushes that move towards center
           }
 
-          evaluated.push({ indices, move, score: score + Math.random() * 10 });
+          const totalPieces = gameState.players.reduce((sum, pl) => sum + pl.positions.length, 0);
+          const openingBonus = totalPieces === 28 ? Math.random() * 65 : Math.random() * 18;
+          evaluated.push({ indices, move, score: score + openingBonus });
       });
   });
 
   if (evaluated.length === 0) return null;
   evaluated.sort((a,b) => b.score - a.score);
-  
-  const best = evaluated[0];
+  const topScore = evaluated[0].score;
+  const nearTop = evaluated.filter(e => topScore - e.score <= 22);
+  const best = nearTop[Math.floor(Math.random() * nearTop.length)] || evaluated[0];
   return {
       pieceIdx: best.indices[0],
       movePos: { r: best.move.r, c: best.move.c },
@@ -754,8 +757,8 @@ export const getBestAmazonsMoveForAI = (gameState: GameState, playerId: PlayerId
          sampleMoves = sampleMoves.sort(() => Math.random() - 0.5).slice(0, 15);
      } else if (difficulty === 'estrema' && sampleMoves.length > 25) {
          sampleMoves.sort((a,b) => {
-             const distA = Math.abs(a[0] - bSize/2) + Math.abs(a[1] - bSize/2);
-             const distB = Math.abs(b[0] - bSize/2) + Math.abs(b[1] - bSize/2);
+             const distA = Math.abs(a[0] - bSize/2) + Math.abs(a[1] - bSize/2) + Math.random() * 1.5;
+             const distB = Math.abs(b[0] - bSize/2) + Math.abs(b[1] - bSize/2) + Math.random() * 1.5;
              return distA - distB;
          });
          sampleMoves = sampleMoves.slice(0, 25);
@@ -783,10 +786,12 @@ export const getBestAmazonsMoveForAI = (gameState: GameState, playerId: PlayerId
                      distOppA = Math.min(distOppA, Math.abs(a[0]-op[0]) + Math.abs(a[1]-op[1]));
                      distOppB = Math.min(distOppB, Math.abs(b[0]-op[0]) + Math.abs(b[1]-op[1]));
                  });
-                 return distOppA - distOppB;
+                 return (distOppA + Math.random() * 1.5) - (distOppB + Math.random() * 1.5);
              });
              sampleArrows = sampleArrows.slice(0, 20);
          }
+
+         const openingJitterScale = burntCells.size <= 4 ? 140 : burntCells.size <= 8 ? 65 : 22;
 
          sampleArrows.forEach(([ar, ac]) => {
             moveOccupied.add(`${ar},${ac}`);
@@ -796,7 +801,7 @@ export const getBestAmazonsMoveForAI = (gameState: GameState, playerId: PlayerId
                score = evaluateStateSemplice(myPosObj as [number,number][], oppBasePos as [number,number][], moveOccupied);
             } else {
                score = evaluateState(myPosObj as [number,number][], oppBasePos as [number,number][], moveOccupied);
-               score += Math.random() * 0.1;
+               score += Math.random() * openingJitterScale;
             }
 
             allMoves.push({ pieceIdx, r: qr, c: qc, arrowR: ar, arrowC: ac, score });
@@ -809,7 +814,10 @@ export const getBestAmazonsMoveForAI = (gameState: GameState, playerId: PlayerId
   if (allMoves.length === 0) return null;
 
   allMoves.sort((a,b) => b.score - a.score);
-  const best = allMoves[0];
+  const topAmazonScore = allMoves[0].score;
+  const amazonMargin = burntCells.size <= 6 ? 110 : 35;
+  const topAmazonPool = allMoves.filter(m => topAmazonScore - m.score <= amazonMargin);
+  const best = topAmazonPool[Math.floor(Math.random() * topAmazonPool.length)] || allMoves[0];
 
   return {
     pieceIdx: best.pieceIdx,
@@ -1146,7 +1154,8 @@ const getBestCorsaExtremeMoveForAI = (gameState: GameState, aiPlayerId: PlayerId
           if (netDelta >= 1 || (netDelta === 0 && (narrowsCorridor || antiTrapBonus > 0))) {
             const distToTarget = Math.abs(r - tr) + Math.abs(c - tc);
             const proximityBonus = Math.max(0, 12 - distToTarget) * 8;
-            const priority = netDelta * 1000 + tacticalBonus + proximityBonus;
+            const rootJitter = isRoot ? Math.random() * 35 : 0;
+            const priority = netDelta * 1000 + tacticalBonus + proximityBonus + rootJitter;
             candidates.push({ r, c, isHoriz, priority, netDelta });
           }
         }
@@ -1314,7 +1323,7 @@ const getBestCorsaExtremeMoveForAI = (gameState: GameState, aiPlayerId: PlayerId
     const da = myRootAnalysis.dist[a];
     const db = myRootAnalysis.dist[b];
     if (da !== db) return da - db;
-    return Math.abs((a % 9) - 4) - Math.abs((b % 9) - 4);
+    return (Math.abs((a % 9) - 4) + Math.random() * 1.4) - (Math.abs((b % 9) - 4) + Math.random() * 1.4);
   });
 
   const rawRootWalls = generateCandidateWalls(aiIdx, primaryOppIdx, 16, true);
@@ -1336,27 +1345,37 @@ const getBestCorsaExtremeMoveForAI = (gameState: GameState, aiPlayerId: PlayerId
     2;
   const searchDepth = bestOppDist <= 3 || myRootAnalysis.shortestDist <= 3 || pawnsClose ? 3 : 2; // Note: root is ply 0, so child call with depth=2 searches 3 total plies, depth=3 searches 4 total plies
 
+  const totalWallsOnBoard = Math.floor(gameState.walls.length / 2);
+  const isEarlyOpening = totalWallsOnBoard <= 3 && myRootAnalysis.shortestDist >= 5 && bestOppDist >= 5;
+
   let bestScore = -Infinity;
   let bestAction: AIAction | null = null;
   let alpha = -Infinity;
   const beta = Infinity;
+  const scoredRootActions: { action: AIAction; score: number }[] = [];
 
   // Evaluate root pawn moves
   for (let i = 0; i < rootPawnMoves.length; i++) {
     const mIdx = rootPawnMoves[i];
     positions[aiIdx] = mIdx;
-    const score = alphaBeta(searchDepth, alpha, beta, primaryOppIdx, 1);
+    const rawScore = alphaBeta(searchDepth, isEarlyOpening ? -Infinity : alpha, beta, primaryOppIdx, 1);
     positions[aiIdx] = myRootPos;
+
+    // Add subtle opening jitter so advancing vs central sidestepping or varied paths can be chosen
+    const jitter = isEarlyOpening ? (Math.random() - 0.5) * 45 : (Math.random() - 0.5) * 14;
+    const score = rawScore + jitter;
+    const candidateAction: AIAction = {
+      pieceIdx: 0,
+      movePos: { r: Math.floor(mIdx / 9), c: mIdx % 9 },
+      wallTarget: null,
+    };
+    scoredRootActions.push({ action: candidateAction, score });
 
     if (score > bestScore || !bestAction) {
       bestScore = score;
-      bestAction = {
-        pieceIdx: 0,
-        movePos: { r: Math.floor(mIdx / 9), c: mIdx % 9 },
-        wallTarget: null,
-      };
+      bestAction = candidateAction;
     }
-    if (bestScore > alpha) alpha = bestScore;
+    if (!isEarlyOpening && rawScore > alpha) alpha = rawScore;
   }
 
   // Evaluate root wall placements
@@ -1365,24 +1384,41 @@ const getBestCorsaExtremeMoveForAI = (gameState: GameState, aiPlayerId: PlayerId
     const w = rootWalls[i];
     applyCorsaWallFast(edges, w.r, w.c, w.isHoriz);
     wallsLeft[aiIdx]--;
-    const score = alphaBeta(searchDepth, alpha, beta, primaryOppIdx, 1);
+    const rawScore = alphaBeta(searchDepth, isEarlyOpening ? -Infinity : alpha, beta, primaryOppIdx, 1);
     wallsLeft[aiIdx]++;
     removeCorsaWallFast(edges, w.r, w.c, w.isHoriz);
 
-    // Require a small margin (+25) over best pawn move so AI doesn't spend a wall on a pure tie
-    if (score > bestScore + 25 || !bestAction) {
-      bestScore = score;
-      bestAction = {
-        pieceIdx: 0,
-        movePos: startPos,
-        wallTarget: null,
-        fugaWallTarget: {
-          r: w.r,
-          c: w.c,
-          orientation: w.isHoriz ? 'h' : 'v',
-        },
-      };
-      if (bestScore > alpha) alpha = bestScore;
+    const jitter = isEarlyOpening ? (Math.random() - 0.5) * 45 : (Math.random() - 0.5) * 18;
+    // Require a small margin (-20) on walls so AI doesn't waste a wall on a pure tie unless tactically strong
+    const effectiveWallScore = rawScore - 20 + jitter;
+    const candidateWallAction: AIAction = {
+      pieceIdx: 0,
+      movePos: startPos,
+      wallTarget: null,
+      fugaWallTarget: {
+        r: w.r,
+        c: w.c,
+        orientation: w.isHoriz ? 'h' : 'v',
+      },
+    };
+    scoredRootActions.push({ action: candidateWallAction, score: effectiveWallScore });
+
+    if (effectiveWallScore > bestScore || !bestAction) {
+      bestScore = effectiveWallScore;
+      bestAction = candidateWallAction;
+      if (!isEarlyOpening && rawScore > alpha) alpha = rawScore;
+    }
+  }
+
+  if (scoredRootActions.length > 1 && bestScore < 500000) {
+    scoredRootActions.sort((a, b) => b.score - a.score);
+    const topScore = scoredRootActions[0].score;
+    const margin = isEarlyOpening ? 60 : 28;
+    const topCandidates = scoredRootActions.filter(
+      item => topScore - item.score <= margin && item.score > -500000
+    );
+    if (topCandidates.length > 1) {
+      return topCandidates[Math.floor(Math.random() * topCandidates.length)].action;
     }
   }
 
@@ -1504,7 +1540,16 @@ export const getBestMoveForAI = (gameState: GameState, playerId: PlayerId): AIAc
 
           const simulatedGameState = { ...gameState, players: simulatedPlayers };
 
-          const score = evaluateBoardState(simulatedGameState, tempWalls, playerId, opponents, gameState.difficulty);
+          const baseScore = evaluateBoardState(simulatedGameState, tempWalls, playerId, opponents, gameState.difficulty);
+          // Add strategic opening perturbation in the early turns so the AI explores varied strong lines
+          const placedWallsCount = gameState.walls.length;
+          const preSortJitter =
+            placedWallsCount <= 4
+              ? (Math.random() - 0.5) * 48
+              : placedWallsCount <= 8
+                ? (Math.random() - 0.5) * 26
+                : (Math.random() - 0.5) * 10;
+          const score = baseScore + preSortJitter;
           actions.push({ action: { pieceIdx, movePos, wallTarget }, score, tempWalls, simulatedPlayers });
         });
       });
@@ -1513,14 +1558,22 @@ export const getBestMoveForAI = (gameState: GameState, playerId: PlayerId): AIAc
 
   if (actions.length === 0) return null;
 
+  // Shuffle before sorting so exact ties are never biased toward pieceIdx 0 or fixed direction order
+  for (let i = actions.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const tmp = actions[i];
+    actions[i] = actions[j];
+    actions[j] = tmp;
+  }
+
   actions.sort((a, b) => b.score - a.score);
 
   const isNormale = gameState.difficulty === 'normale';
   const isEstrema = gameState.difficulty === 'estrema';
   // Per Quoridor ('corsa'): "Medio" (difficile) usa i parametri dell'ex-Difficile (estrema), "Semplice" (normale) usa i parametri dell'ex-Medio (difficile)
   const isCorsaExEstrema = gameState.gameMode === 'corsa' && gameState.difficulty === 'difficile';
-  let TOP_N = isEstrema ? 16 : (gameState.boardTheme.startsWith('amazons') ? 4 : 10);
-  if (isNormale) TOP_N = 2; // Introduce minimal lookahead for Semplice
+  let TOP_N = isEstrema ? 18 : (gameState.boardTheme.startsWith('amazons') ? 4 : 12);
+  if (isNormale) TOP_N = 3; // Introduce minimal lookahead for Semplice
   if (gameState.gameMode === 'corsa') {
     TOP_N = isCorsaExEstrema ? 20 : 12;
   }
@@ -1529,6 +1582,7 @@ export const getBestMoveForAI = (gameState: GameState, playerId: PlayerId): AIAc
   
   let bestMinimaxScore = -Infinity;
   let bestAction: AIAction | null = null;
+  const evaluatedTopActions: { action: AIAction; minimaxScore: number }[] = [];
 
   const nextPlayer = opponents[0]; // Assume 1v1 or prioritize first opponent
 
@@ -1662,9 +1716,39 @@ export const getBestMoveForAI = (gameState: GameState, playerId: PlayerId): AIAc
       minScoreForUs = score;
     }
 
+    evaluatedTopActions.push({ action, minimaxScore: minScoreForUs });
+
     if (minScoreForUs > bestMinimaxScore) {
       bestMinimaxScore = minScoreForUs;
       bestAction = action;
+    }
+  }
+
+  if (evaluatedTopActions.length > 1 && bestMinimaxScore < 500000) {
+    evaluatedTopActions.sort((a, b) => b.minimaxScore - a.minimaxScore);
+    const topScore = evaluatedTopActions[0].minimaxScore;
+    const placedWallsCount = gameState.walls.length;
+    const margin =
+      gameState.gameMode === 'corsa'
+        ? (placedWallsCount <= 6 ? 120 : 45)
+        : placedWallsCount <= 4
+          ? 70
+          : placedWallsCount <= 8
+            ? 38
+            : 14;
+    const validCandidates = evaluatedTopActions.filter(
+      item => topScore - item.minimaxScore <= margin && item.minimaxScore > -40000
+    );
+    if (validCandidates.length > 1) {
+      // Weighted random pick favoring the highest minimax scores while preserving rich opening variety
+      const weights = validCandidates.map((_, idx) => Math.max(1, validCandidates.length - idx * 0.6));
+      const totalWeight = weights.reduce((s, w) => s + w, 0);
+      let r = Math.random() * totalWeight;
+      for (let i = 0; i < validCandidates.length; i++) {
+        r -= weights[i];
+        if (r <= 0) return validCandidates[i].action;
+      }
+      return validCandidates[0].action;
     }
   }
 
@@ -1678,21 +1762,23 @@ export const getBestWallForAI = (gameState: GameState, playerId: PlayerId): Poin
   const currentPos = currentPlayer.positions[gameState.selectedPieceIndex];
   const opponents = gameState.players.filter(p => p.id !== playerId);
 
-  let bestScore = -Infinity;
-  let bestWall: Point | null = null;
   const wallOptions = getWallOptions(currentPos, gameState.walls, theme, [], gameState.gameMode);
-  
+  if (wallOptions.length === 0) return null;
+
+  const scoredWalls: { wallTarget: Point; score: number }[] = [];
   wallOptions.forEach(wallTarget => {
     const tempWallId = serializeWall(currentPos.r, currentPos.c, wallTarget.r, wallTarget.c);
     const tempWalls = [...gameState.walls, { id: tempWallId, ownerId: playerId }];
     const score = evaluateBoardState(gameState, tempWalls, playerId, opponents, gameState.difficulty);
-    if (score > bestScore) {
-      bestScore = score;
-      bestWall = wallTarget;
-    }
+    scoredWalls.push({ wallTarget, score });
   });
 
-  return bestWall || (wallOptions.length > 0 ? wallOptions[0] : null);
+  scoredWalls.sort((a, b) => b.score - a.score);
+  const bestScore = scoredWalls[0].score;
+  const margin = gameState.walls.length <= 6 ? 35 : 10;
+  const topWalls = scoredWalls.filter(w => bestScore - w.score <= margin);
+  const chosen = topWalls[Math.floor(Math.random() * topWalls.length)];
+  return chosen ? chosen.wallTarget : scoredWalls[0].wallTarget;
 };
 
 export const getBestSetupForAI = (gameState: GameState): Point => {
@@ -1701,269 +1787,639 @@ export const getBestSetupForAI = (gameState: GameState): Point => {
     const currentPlayer = gameState.players[gameState.currentPlayerIndex];
     
     if (theme === 'hex') {
-        const myPosSet = new Set<string>();
-        const oppPosSet = new Set<string>();
+        // Board encoding: 0 = empty, 1 = AI (currentPlayer), 2 = Opponent
+        const board = new Int8Array(121);
+        const myPieces: number[] = [];
+        const oppPieces: number[] = [];
+        let lastOppFlat = -1;
+
         gameState.players.forEach(p => {
             p.positions.forEach(pos => {
-                if (p.id === currentPlayer.id) myPosSet.add(`${pos.r},${pos.c}`);
-                else oppPosSet.add(`${pos.r},${pos.c}`);
+                const flat = pos.r * 11 + pos.c;
+                if (flat >= 0 && flat < 121) {
+                    if (p.id === currentPlayer.id) {
+                        board[flat] = 1;
+                        myPieces.push(flat);
+                    } else {
+                        board[flat] = 2;
+                        oppPieces.push(flat);
+                        lastOppFlat = flat;
+                    }
+                }
             });
         });
 
-        const isP1 = currentPlayer.id === 1;
+        const totalPieces = myPieces.length + oppPieces.length;
+        // Blue (PLAYER_COLORS[1]) connects c=0 <-> c=10; Red (PLAYER_COLORS[2]) connects r=0 <-> r=10
+        const isP1 = currentPlayer.color ? currentPlayer.color === PLAYER_COLORS[1] : currentPlayer.id === 1;
 
-        const computeHexDist = (mySet: Set<string>, oppSet: Set<string>, checkP1: boolean): number => {
-            const dist = new Int16Array(121);
-            dist.fill(1000);
-            
-            const pools: number[][] = Array.from({length: 121}, () => []);
-            
-            for (let idx = 0; idx < 11; idx++) {
-                const r = checkP1 ? idx : 0;
-                const c = checkP1 ? 0 : idx;
-                const key = `${r},${c}`;
-                if (oppSet.has(key)) continue;
-                const d = mySet.has(key) ? 0 : 1;
-                const flatIdx = r * 11 + c;
-                dist[flatIdx] = d;
-                pools[d].push(flatIdx);
-            }
+        // Strong central opening book for the very first move on an empty board
+        if (totalPieces === 0) {
+            const openingBook: Point[] = [
+                { r: 5, c: 5 }, { r: 5, c: 4 }, { r: 4, c: 5 },
+                { r: 6, c: 5 }, { r: 5, c: 6 }, { r: 4, c: 6 }, { r: 6, c: 4 }
+            ];
+            return openingBook[Math.floor(Math.random() * openingBook.length)];
+        }
 
-            for (let d = 0; d < pools.length; d++) {
-                const q = pools[d];
-                if (!q) continue;
-                for (let i = 0; i < q.length; i++) {
-                    const flatIdx = q[i];
-                    if (dist[flatIdx] < d) continue;
-                    
-                    const r = Math.floor(flatIdx / 11);
-                    const c = flatIdx % 11;
-                    
-                    if (checkP1 && c === 10) return d;
-                    if (!checkP1 && r === 10) return d;
-
-                    const nrArr = [r - 1, r, r + 1, r + 1, r, r - 1];
-                    const ncArr = [c, c - 1, c - 1, c, c + 1, c + 1];
-                    
-                    for (let j = 0; j < 6; j++) {
-                        const nr = nrArr[j];
-                        const nc = ncArr[j];
-                        if (nr >= 0 && nc >= 0 && nr < 11 && nc < 11) {
-                            const nKey = `${nr},${nc}`;
-                            if (oppSet.has(nKey)) continue;
-                            const nd = d + (mySet.has(nKey) ? 0 : 1);
-                            const nFlat = nr * 11 + nc;
-                            if (nd < dist[nFlat]) {
-                                dist[nFlat] = nd;
-                                pools[nd].push(nFlat);
-                            }
-                        }
-                    }
-                }
-            }
-            return 1000;
-        };
-
-        const getHexShortestPath = (mySet: Set<string>, oppSet: Set<string>, checkP1: boolean): Set<number> => {
-            const dist = new Int16Array(121);
-            dist.fill(1000);
-            const parent = new Int16Array(121);
-            parent.fill(-1);
-            const pools: number[][] = Array.from({length: 121}, () => []);
-            
-            for (let idx = 0; idx < 11; idx++) {
-                const r = checkP1 ? idx : 0;
-                const c = checkP1 ? 0 : idx;
-                const key = `${r},${c}`;
-                if (oppSet.has(key)) continue;
-                const d = mySet.has(key) ? 0 : 1;
-                const flatIdx = r * 11 + c;
-                dist[flatIdx] = d;
-                pools[d].push(flatIdx);
-            }
-
-            let endIdx = -1;
-
-            for (let d = 0; d < pools.length; d++) {
-                const q = pools[d];
-                if (!q) continue;
-                for (let i = 0; i < q.length; i++) {
-                    const flatIdx = q[i];
-                    if (dist[flatIdx] < d) continue;
-                    
-                    const r = Math.floor(flatIdx / 11);
-                    const c = flatIdx % 11;
-                    
-                    if (checkP1 && c === 10) { endIdx = flatIdx; break; }
-                    if (!checkP1 && r === 10) { endIdx = flatIdx; break; }
-
-                    const nrArr = [r - 1, r, r + 1, r + 1, r, r - 1];
-                    const ncArr = [c, c - 1, c - 1, c, c + 1, c + 1];
-                    
-                    for (let j = 0; j < 6; j++) {
-                        const nr = nrArr[j];
-                        const nc = ncArr[j];
-                        if (nr >= 0 && nc >= 0 && nr < 11 && nc < 11) {
-                            const nKey = `${nr},${nc}`;
-                            if (oppSet.has(nKey)) continue;
-                            const nd = d + (mySet.has(nKey) ? 0 : 1);
-                            const nFlat = nr * 11 + nc;
-                            if (nd < dist[nFlat]) {
-                                dist[nFlat] = nd;
-                                parent[nFlat] = flatIdx;
-                                pools[nd].push(nFlat);
-                            }
-                        }
-                    }
-                }
-                if (endIdx !== -1) break;
-            }
-
-            const path = new Set<number>();
-            let curr = endIdx;
-            while (curr !== -1) {
-                path.add(curr);
-                curr = parent[curr];
-            }
-            return path;
-        };
-
-        const evaluateMove = (myDist: number, oppDist: number, r: number, c: number, baselineMy: number, baselineOpp: number, diff: Difficulty, isMyPath: boolean, isOppPath: boolean): number => {
-            const savesGame = (baselineOpp === 1 && oppDist > 1);
-            let score = 0;
-            if (savesGame) score += 10000;
-            
-            if (diff !== 'normale') {
-               if (baselineOpp === 2 && oppDist > 2) score += 500;
-               if (baselineOpp === 3 && oppDist > 3 && diff === 'estrema') score += 200;
-            }
-
-            const distToCenter = Math.abs(r - 5) + Math.abs(c - 5);
-            
-            let attackWeight = 100;
-            let defenseWeight = 100;
-            
-            if (diff === 'estrema') {
-                if (baselineMy <= baselineOpp) { attackWeight = 150; defenseWeight = 120; }
-                else { defenseWeight = 160; attackWeight = 100; }
-            } else if (diff === 'difficile') {
-                if (baselineMy < baselineOpp) { attackWeight = 130; defenseWeight = 110; }
-                else { defenseWeight = 140; attackWeight = 110; }
-            } else {
-                if (baselineOpp <= 3) { defenseWeight = 120; attackWeight = 80; }
-            }
-            
-            score += -myDist * attackWeight + oppDist * defenseWeight;
-            score += (10 - distToCenter) * 2;
-            
-            // Grand bonus if we block their shortest path or advance our own
-            if (diff !== 'normale') {
-               if (isOppPath) score += 250; // Highly value blocking opponent's current path!
-               if (isMyPath) score += 100;  // Also value completing our shortest path
-            }
-
-            if (diff === 'normale') score += Math.random() * 5;
-            else if (diff === 'difficile') score += Math.random() * 1;
-            else score += Math.random() * 0.1; // tiny random for breaking equal scores
-
-            return score;
-        };
-
-        let baselineMyDist = computeHexDist(myPosSet, oppPosSet, isP1);
-        let baselineOppDist = computeHexDist(oppPosSet, myPosSet, !isP1);
-        
-        const myShortestPath = getHexShortestPath(myPosSet, oppPosSet, isP1);
-        const oppShortestPath = getHexShortestPath(oppPosSet, myPosSet, !isP1);
-
-        interface HexCandidate { r: number, c: number, score: number, myDist: number, oppDist: number }
-        const candidates: HexCandidate[] = [];
+        // Precompute neighbors and 2-bridge topology for all 121 cells
+        const hexNeighbors: number[][] = Array.from({ length: 121 }, () => []);
+        const hexBridges: { target: number; c1: number; c2: number }[][] = Array.from({ length: 121 }, () => []);
+        const dr6 = [-1, 0, 1, 1, 0, -1];
+        const dc6 = [0, -1, -1, 0, 1, 1];
+        const brDr = [-1, 1, 2, 1, -1, -2];
+        const brDc = [-1, -2, -1, 1, 2, 1];
 
         for (let r = 0; r < 11; r++) {
             for (let c = 0; c < 11; c++) {
-                const key = `${r},${c}`;
-                if (myPosSet.has(key) || oppPosSet.has(key)) continue;
+                const u = r * 11 + c;
+                for (let j = 0; j < 6; j++) {
+                    const nr = r + dr6[j];
+                    const nc = c + dc6[j];
+                    if (nr >= 0 && nr < 11 && nc >= 0 && nc < 11) {
+                        hexNeighbors[u].push(nr * 11 + nc);
+                    }
+                    const tr = r + brDr[j];
+                    const tc = c + brDc[j];
+                    const c1r = r + dr6[j];
+                    const c1c = c + dc6[j];
+                    const c2r = r + dr6[(j + 1) % 6];
+                    const c2c = c + dc6[(j + 1) % 6];
+                    if (
+                        tr >= 0 && tr < 11 && tc >= 0 && tc < 11 &&
+                        c1r >= 0 && c1r < 11 && c1c >= 0 && c1c < 11 &&
+                        c2r >= 0 && c2r < 11 && c2c >= 0 && c2c < 11
+                    ) {
+                        hexBridges[u].push({
+                            target: tr * 11 + tc,
+                            c1: c1r * 11 + c1c,
+                            c2: c2r * 11 + c2c
+                        });
+                    }
+                }
+            }
+        }
 
-                myPosSet.add(key);
-                const myDist = computeHexDist(myPosSet, oppPosSet, isP1);
-                myPosSet.delete(key);
+        interface HexSideAnalysis {
+            minDist: number;
+            vMinDist: number;
+            resistance: number;
+            effectiveDist: number;
+            distA: Int16Array;
+            distB: Int16Array;
+            layerCount: Int16Array;
+        }
 
-                oppPosSet.add(key);
-                const oppDist = computeHexDist(oppPosSet, myPosSet, !isP1);
-                oppPosSet.delete(key);
+        const runHexBFS = (
+            b: Int8Array,
+            ownerVal: number,
+            oppVal: number,
+            connectCols: boolean,
+            fromEnd: boolean,
+            useVirtualBridges: boolean
+        ): Int16Array => {
+            const dist = new Int16Array(121);
+            dist.fill(1000);
+            const deque = new Int16Array(512);
+            let head = 256;
+            let tail = 256;
 
-                if (myDist === 0) return { r, c }; // Immediate win
+            for (let idx = 0; idx < 11; idx++) {
+                const r = connectCols ? idx : (fromEnd ? 10 : 0);
+                const c = connectCols ? (fromEnd ? 10 : 0) : idx;
+                const u = r * 11 + c;
+                if (b[u] === oppVal) continue;
+                const d = b[u] === ownerVal ? 0 : 1;
+                dist[u] = d;
+                if (d === 0) deque[--head] = u;
+                else deque[tail++] = u;
+            }
 
-                const flatIdx = r * 11 + c;
-                const isMyPath = myShortestPath.has(flatIdx);
-                const isOppPath = oppShortestPath.has(flatIdx);
+            // Virtual edge 2-bridges: a stone at distance 1 from its target border with two empty border carriers is virtually connected at cost 0
+            if (useVirtualBridges) {
+                for (let idx = 0; idx < 10; idx++) {
+                    if (connectCols) {
+                        const cEdge = fromEnd ? 10 : 0;
+                        const cStep = fromEnd ? 9 : 1;
+                        const rStone = fromEnd ? idx + 1 : idx;
+                        const u = rStone * 11 + cStep;
+                        const b1 = idx * 11 + cEdge;
+                        const b2 = (idx + 1) * 11 + cEdge;
+                        if (b[u] === ownerVal && b[b1] === 0 && b[b2] === 0 && dist[u] > 0) {
+                            dist[u] = 0;
+                            deque[--head] = u;
+                        }
+                    } else {
+                        const rEdge = fromEnd ? 10 : 0;
+                        const rStep = fromEnd ? 9 : 1;
+                        const cStone = fromEnd ? idx + 1 : idx;
+                        const u = rStep * 11 + cStone;
+                        const b1 = rEdge * 11 + idx;
+                        const b2 = rEdge * 11 + (idx + 1);
+                        if (b[u] === ownerVal && b[b1] === 0 && b[b2] === 0 && dist[u] > 0) {
+                            dist[u] = 0;
+                            deque[--head] = u;
+                        }
+                    }
+                }
+            }
 
-                let score = evaluateMove(myDist, oppDist, r, c, baselineMyDist, baselineOppDist, difficulty, isMyPath, isOppPath);
-                candidates.push({ r, c, score, myDist, oppDist });
+            while (head < tail) {
+                const u = deque[head++];
+                const d = dist[u];
+
+                const nbs = hexNeighbors[u];
+                for (let i = 0; i < nbs.length; i++) {
+                    const v = nbs[i];
+                    if (b[v] === oppVal) continue;
+                    const cost = b[v] === ownerVal ? 0 : 1;
+                    const nd = d + cost;
+                    if (nd < dist[v]) {
+                        dist[v] = nd;
+                        if (cost === 0) deque[--head] = v;
+                        else deque[tail++] = v;
+                    }
+                }
+
+                // Virtual 2-bridge links between friendly stones when both carriers are empty
+                if (useVirtualBridges && b[u] === ownerVal) {
+                    const brs = hexBridges[u];
+                    for (let i = 0; i < brs.length; i++) {
+                        const br = brs[i];
+                        if (b[br.c1] === 0 && b[br.c2] === 0 && b[br.target] === ownerVal) {
+                            if (d < dist[br.target]) {
+                                dist[br.target] = d;
+                                deque[--head] = br.target;
+                            }
+                        }
+                    }
+                }
+            }
+
+            return dist;
+        };
+
+        const analyzeHexSide = (b: Int8Array, ownerVal: number, connectCols: boolean): HexSideAnalysis => {
+            const oppVal = ownerVal === 1 ? 2 : 1;
+            const distA = runHexBFS(b, ownerVal, oppVal, connectCols, false, false);
+            const distB = runHexBFS(b, ownerVal, oppVal, connectCols, true, false);
+            const vDistA = runHexBFS(b, ownerVal, oppVal, connectCols, false, true);
+
+            let minDist = 1000;
+            let vMinDist = 1000;
+            for (let idx = 0; idx < 11; idx++) {
+                const u = connectCols ? (idx * 11 + 10) : (10 * 11 + idx);
+                if (distA[u] < minDist) minDist = distA[u];
+                if (vDistA[u] < vMinDist) vMinDist = vDistA[u];
+            }
+            if (useVirtualEdgeEndCheck(b, ownerVal, connectCols, vDistA) < vMinDist) {
+                vMinDist = useVirtualEdgeEndCheck(b, ownerVal, connectCols, vDistA);
+            }
+
+            const layerCount = new Int16Array(15);
+            const nearLayerCount = new Int16Array(15);
+
+            if (minDist > 0 && minDist < 100) {
+                for (let u = 0; u < 121; u++) {
+                    if (b[u] !== 0) continue;
+                    const pathLen = distA[u] + distB[u] - 1;
+                    const k = distA[u];
+                    if (k >= 1 && k <= 14) {
+                        if (pathLen === minDist) layerCount[k]++;
+                        else if (pathLen === minDist + 1) nearLayerCount[k]++;
+                    }
+                }
+            }
+
+            let resistance = 0;
+            if (minDist === 0) {
+                resistance = 0;
+            } else if (minDist >= 100) {
+                resistance = 50;
+            } else {
+                const maxLayer = Math.min(14, minDist);
+                for (let k = 1; k <= maxLayer; k++) {
+                    const parallelWidth = layerCount[k] + 0.25 * nearLayerCount[k];
+                    resistance += 1.0 / Math.max(0.75, parallelWidth);
+                }
+            }
+
+            const effectiveDist = minDist * 1.0 + vMinDist * 0.45 + resistance * 0.72;
+            return { minDist, vMinDist, resistance, effectiveDist, distA, distB, layerCount };
+        };
+
+        function useVirtualEdgeEndCheck(b: Int8Array, ownerVal: number, connectCols: boolean, vDistA: Int16Array): number {
+            let best = 1000;
+            for (let idx = 0; idx < 10; idx++) {
+                if (connectCols) {
+                    const u = (idx + 1) * 11 + 9;
+                    const b1 = idx * 11 + 10;
+                    const b2 = (idx + 1) * 11 + 10;
+                    if (b[u] === ownerVal && b[b1] === 0 && b[b2] === 0 && vDistA[u] < best) {
+                        best = vDistA[u];
+                    }
+                } else {
+                    const u = 9 * 11 + (idx + 1);
+                    const b1 = 10 * 11 + idx;
+                    const b2 = 10 * 11 + (idx + 1);
+                    if (b[u] === ownerVal && b[b1] === 0 && b[b2] === 0 && vDistA[u] < best) {
+                        best = vDistA[u];
+                    }
+                }
+            }
+            return best;
+        }
+
+        // Fast distance-only check used inside opponent reply loop
+        const computeFastEffective = (b: Int8Array, ownerVal: number, connectCols: boolean): { minDist: number; vMinDist: number; resistance: number; effectiveDist: number } => {
+            const res = analyzeHexSide(b, ownerVal, connectCols);
+            return { minDist: res.minDist, vMinDist: res.vMinDist, resistance: res.resistance, effectiveDist: res.effectiveDist };
+        };
+
+        const baseMy = analyzeHexSide(board, 1, isP1);
+        const baseOpp = analyzeHexSide(board, 2, !isP1);
+
+        // Identify cells that save a threatened AI 2-bridge or finish cutting an opponent 2-bridge
+        const saveMyBridgeScore = new Float32Array(121);
+        const cutOppBridgeScore = new Float32Array(121);
+
+        const checkBridgeTactics = () => {
+            for (let u = 0; u < 121; u++) {
+                if (board[u] === 1) {
+                    const brs = hexBridges[u];
+                    for (let i = 0; i < brs.length; i++) {
+                        const br = brs[i];
+                        if (board[br.target] === 1) {
+                            if (board[br.c1] === 2 && board[br.c2] === 0) saveMyBridgeScore[br.c2] += 1400;
+                            else if (board[br.c2] === 2 && board[br.c1] === 0) saveMyBridgeScore[br.c1] += 1400;
+                        }
+                    }
+                } else if (board[u] === 2) {
+                    const brs = hexBridges[u];
+                    for (let i = 0; i < brs.length; i++) {
+                        const br = brs[i];
+                        if (board[br.target] === 2) {
+                            if (board[br.c1] === 1 && board[br.c2] === 0) cutOppBridgeScore[br.c2] += 1200;
+                            else if (board[br.c2] === 1 && board[br.c1] === 0) cutOppBridgeScore[br.c1] += 1200;
+                        }
+                    }
+                }
+            }
+            // Edge 2-bridge saves & cuts
+            for (let idx = 0; idx < 10; idx++) {
+                // Blue edge bridges (c=0 and c=10)
+                const uLeft = idx * 11 + 1;
+                const bL1 = idx * 11 + 0;
+                const bL2 = (idx + 1) * 11 + 0;
+                if (board[uLeft] === (isP1 ? 1 : 2)) {
+                    const isMine = board[uLeft] === 1;
+                    const enemy = isMine ? 2 : 1;
+                    const arr = isMine ? saveMyBridgeScore : cutOppBridgeScore;
+                    if (board[bL1] === enemy && board[bL2] === 0) arr[bL2] += 1300;
+                    else if (board[bL2] === enemy && board[bL1] === 0) arr[bL1] += 1300;
+                }
+                const uRight = (idx + 1) * 11 + 9;
+                const bR1 = idx * 11 + 10;
+                const bR2 = (idx + 1) * 11 + 10;
+                if (board[uRight] === (isP1 ? 1 : 2)) {
+                    const isMine = board[uRight] === 1;
+                    const enemy = isMine ? 2 : 1;
+                    const arr = isMine ? saveMyBridgeScore : cutOppBridgeScore;
+                    if (board[bR1] === enemy && board[bR2] === 0) arr[bR2] += 1300;
+                    else if (board[bR2] === enemy && board[bR1] === 0) arr[bR1] += 1300;
+                }
+                // Red edge bridges (r=0 and r=10)
+                const uTop = 1 * 11 + idx;
+                const bT1 = 0 * 11 + idx;
+                const bT2 = 0 * 11 + (idx + 1);
+                if (board[uTop] === (!isP1 ? 1 : 2)) {
+                    const isMine = board[uTop] === 1;
+                    const enemy = isMine ? 2 : 1;
+                    const arr = isMine ? saveMyBridgeScore : cutOppBridgeScore;
+                    if (board[bT1] === enemy && board[bT2] === 0) arr[bT2] += 1300;
+                    else if (board[bT2] === enemy && board[bT1] === 0) arr[bT1] += 1300;
+                }
+                const uBot = 9 * 11 + (idx + 1);
+                const bB1 = 10 * 11 + idx;
+                const bB2 = 10 * 11 + (idx + 1);
+                if (board[uBot] === (!isP1 ? 1 : 2)) {
+                    const isMine = board[uBot] === 1;
+                    const enemy = isMine ? 2 : 1;
+                    const arr = isMine ? saveMyBridgeScore : cutOppBridgeScore;
+                    if (board[bB1] === enemy && board[bB2] === 0) arr[bB2] += 1300;
+                    else if (board[bB2] === enemy && board[bB1] === 0) arr[bB1] += 1300;
+                }
+            }
+        };
+        checkBridgeTactics();
+
+        // Detect opponent spearheads, straight-line runners, and 2-bridge cap points
+        const spearheadBlockBonus = new Float32Array(121);
+        for (let i = 0; i < oppPieces.length; i++) {
+            const s = oppPieces[i];
+            const sr = Math.floor(s / 11);
+            const sc = s % 11;
+            const sPathLen = baseOpp.distA[s] + baseOpp.distB[s];
+            const isOnOppShortest = sPathLen <= baseOpp.minDist + 1;
+            const isLastMove = s === lastOppFlat;
+            if (!isOnOppShortest && !isLastMove) continue;
+
+            const weight = (sPathLen === baseOpp.minDist ? 1.35 : 0.8) * (isLastMove ? 1.35 : 1.0);
+
+            // Check 6 direct directions from opponent stone s
+            for (let d = 0; d < 6; d++) {
+                const nr = sr + dr6[d];
+                const nc = sc + dc6[d];
+                if (nr < 0 || nr >= 11 || nc < 0 || nc >= 11) continue;
+                const nFlat = nr * 11 + nc;
+                if (board[nFlat] !== 0) continue;
+
+                const nPathLen = baseOpp.distA[nFlat] + baseOpp.distB[nFlat] - 1;
+                // Must advance toward one of the opponent's borders along a shortest/near-shortest path
+                const advancesA = baseOpp.distA[nFlat] === baseOpp.distA[s] + 1 && baseOpp.distB[nFlat] < baseOpp.distB[s];
+                const advancesB = baseOpp.distB[nFlat] === baseOpp.distB[s] + 1 && baseOpp.distA[nFlat] < baseOpp.distA[s];
+
+                if ((advancesA || advancesB) && nPathLen <= baseOpp.minDist + 1) {
+                    let bonus = (nPathLen === baseOpp.minDist ? 220 : 95) * weight;
+
+                    // Check if opponent is building a straight line (s_prev -> s -> nFlat)
+                    const prevR = sr - dr6[d];
+                    const prevC = sc - dc6[d];
+                    if (prevR >= 0 && prevR < 11 && prevC >= 0 && prevC < 11 && board[prevR * 11 + prevC] === 2) {
+                        // Straight line of >= 2 stones pointing directly at nFlat!
+                        let chainLen = 2;
+                        let cr = prevR - dr6[d];
+                        let cc = prevC - dc6[d];
+                        while (cr >= 0 && cr < 11 && cc >= 0 && cc < 11 && board[cr * 11 + cc] === 2) {
+                            chainLen++;
+                            cr -= dr6[d];
+                            cc -= dc6[d];
+                        }
+                        bonus += (360 + chainLen * 140) * weight;
+
+                        // Also boost the cell 2 steps ahead on the same straight line if empty
+                        const n2r = nr + dr6[d];
+                        const n2c = nc + dc6[d];
+                        if (n2r >= 0 && n2r < 11 && n2c >= 0 && n2c < 11) {
+                            const n2Flat = n2r * 11 + n2c;
+                            if (board[n2Flat] === 0) {
+                                spearheadBlockBonus[n2Flat] += (240 + chainLen * 90) * weight;
+                            }
+                        }
+                    }
+
+                    spearheadBlockBonus[nFlat] += bonus;
+                }
+            }
+
+            // Check 6 two-bridge caps in front of opponent stone s
+            const brs = hexBridges[s];
+            for (let bIdx = 0; bIdx < brs.length; bIdx++) {
+                const br = brs[bIdx];
+                if (board[br.target] !== 0 || board[br.c1] !== 0 || board[br.c2] !== 0) continue;
+                const tPathLen = baseOpp.distA[br.target] + baseOpp.distB[br.target] - 1;
+                const advancesA = baseOpp.distB[br.target] < baseOpp.distB[s];
+                const advancesB = baseOpp.distA[br.target] < baseOpp.distA[s];
+                if ((advancesA || advancesB) && tPathLen <= baseOpp.minDist + 1) {
+                    spearheadBlockBonus[br.target] += (tPathLen === baseOpp.minDist ? 245 : 110) * weight;
+                }
+            }
+        }
+
+        interface HexCandidate {
+            r: number;
+            c: number;
+            flat: number;
+            score: number;
+            myEffective: number;
+            oppEffective: number;
+            myMinDist: number;
+            oppMinDist: number;
+            tacticalBonus: number;
+        }
+
+        const candidates: HexCandidate[] = [];
+
+        // Weights tuned so ALL difficulty levels actively block straight lines and shortest-path threats
+        const isHardOrAbove = difficulty === 'difficile' || difficulty === 'estrema' || difficulty === 'maestro';
+        const isExtreme = difficulty === 'estrema' || difficulty === 'maestro';
+        const attackWeight = isExtreme ? 310 : isHardOrAbove ? 280 : 240;
+        const defenseWeight = isExtreme
+            ? (baseOpp.effectiveDist <= baseMy.effectiveDist + 0.8 ? 390 : 330)
+            : isHardOrAbove
+              ? (baseOpp.effectiveDist <= baseMy.effectiveDist + 0.8 ? 350 : 300)
+              : 290;
+
+        for (let r = 0; r < 11; r++) {
+            for (let c = 0; c < 11; c++) {
+                const flat = r * 11 + c;
+                if (board[flat] !== 0) continue;
+
+                // Place AI stone on board[flat] for BOTH myAfter and oppAfter!
+                board[flat] = 1;
+                const myAfter = computeFastEffective(board, 1, isP1);
+                if (myAfter.minDist === 0) {
+                    board[flat] = 0;
+                    return { r, c }; // Immediate winning move!
+                }
+                const oppAfter = computeFastEffective(board, 2, !isP1);
+                board[flat] = 0;
+
+                let score = 0;
+                let tacticalBonus = 0;
+
+                // 1. Critical Game Saver (opponent is 1 move away from winning)
+                if (baseOpp.minDist === 1 && oppAfter.minDist > 1) {
+                    score += 50000;
+                    tacticalBonus += 50000;
+                } else if (baseOpp.minDist === 2 && oppAfter.minDist > 2) {
+                    score += 2400;
+                    tacticalBonus += 2400;
+                } else if (baseOpp.vMinDist <= 2 && oppAfter.vMinDist > baseOpp.vMinDist) {
+                    score += 1100;
+                    tacticalBonus += 1100;
+                }
+
+                // 2. Core Progress: how much our stone reduces our effective distance + increases opponent's effective distance
+                const myGain = baseMy.effectiveDist - myAfter.effectiveDist;
+                const oppDelay = oppAfter.effectiveDist - baseOpp.effectiveDist;
+                score += myGain * attackWeight + oppDelay * defenseWeight;
+
+                // 3. Shortest-path & Bottleneck centrality
+                const myPathLen = baseMy.distA[flat] + baseMy.distB[flat] - 1;
+                const oppPathLen = baseOpp.distA[flat] + baseOpp.distB[flat] - 1;
+                const isMyShortest = myPathLen === baseMy.minDist;
+                const isOppShortest = oppPathLen === baseOpp.minDist;
+
+                if (isOppShortest) {
+                    const layer = baseOpp.distA[flat];
+                    const width = (layer >= 1 && layer <= 14) ? Math.max(1, baseOpp.layerCount[layer]) : 4;
+                    const bottleneckBonus = 180 + Math.round(380 / width);
+                    score += bottleneckBonus;
+                    tacticalBonus += bottleneckBonus * 0.7;
+                } else if (oppPathLen === baseOpp.minDist + 1) {
+                    score += 65;
+                }
+
+                if (isMyShortest) {
+                    const layer = baseMy.distA[flat];
+                    const width = (layer >= 1 && layer <= 14) ? Math.max(1, baseMy.layerCount[layer]) : 4;
+                    const myPathBonus = 130 + Math.round(180 / width);
+                    score += myPathBonus;
+                    tacticalBonus += myPathBonus * 0.5;
+                } else if (myPathLen === baseMy.minDist + 1) {
+                    score += 45;
+                }
+
+                // Dual-purpose move (simultaneously on AI's shortest path AND Opponent's shortest path)
+                if (isMyShortest && isOppShortest) {
+                    score += 220;
+                    tacticalBonus += 160;
+                }
+
+                // 4. Bridge saves, bridge cuts, and spearhead / straight-line blocking
+                const brSave = saveMyBridgeScore[flat];
+                const brCut = cutOppBridgeScore[flat];
+                const spBlock = spearheadBlockBonus[flat];
+                score += brSave + brCut + spBlock;
+                tacticalBonus += brSave + brCut + spBlock * 0.85;
+
+                // 5. Offensive 2-bridge formation with existing AI stones along shortest path
+                if (isMyShortest || myPathLen <= baseMy.minDist + 1) {
+                    const brs = hexBridges[flat];
+                    for (let bIdx = 0; bIdx < brs.length; bIdx++) {
+                        const br = brs[bIdx];
+                        if (board[br.target] === 1 && board[br.c1] === 0 && board[br.c2] === 0) {
+                            score += 85;
+                            tacticalBonus += 50;
+                        }
+                    }
+                }
+
+                // 6. Positional geometry: favor diamond center & penalize dead acute corners (0,0) and (10,10)
+                const distToCenter = Math.abs(r - 5) + Math.abs(c - 5);
+                score += (10 - distToCenter) * 8;
+
+                if ((r === 0 && c === 0) || (r === 10 && c === 10)) {
+                    if (baseMy.minDist > 2 && baseOpp.minDist > 2) {
+                        score -= 450;
+                    }
+                } else if ((r + c <= 2 || r + c >= 18) && totalPieces <= 8 && baseMy.minDist > 3 && baseOpp.minDist > 3) {
+                    score -= 140;
+                }
+
+                // Small controlled opening variety so games aren't identical
+                const jitterScale = (difficulty === 'facile' || difficulty === 'normale')
+                    ? (totalPieces <= 4 ? 18 : 10)
+                    : difficulty === 'difficile'
+                      ? (totalPieces <= 4 ? 8 : 3)
+                      : (totalPieces <= 2 ? 4 : 1);
+                score += Math.random() * jitterScale;
+
+                candidates.push({
+                    r,
+                    c,
+                    flat,
+                    score,
+                    myEffective: myAfter.effectiveDist,
+                    oppEffective: oppAfter.effectiveDist,
+                    myMinDist: myAfter.minDist,
+                    oppMinDist: oppAfter.minDist,
+                    tacticalBonus
+                });
             }
         }
 
         candidates.sort((a, b) => b.score - a.score);
-        
         if (candidates.length === 0) return { r: 5, c: 5 };
 
-        let topN = 3; // 'normale'
-        if (difficulty === 'estrema') topN = 12;
-        else if (difficulty === 'difficile') topN = 6;
+        // If there is an immediate game-saving move, return the best game-saver immediately
+        if (candidates[0].score >= 40000) {
+            return { r: candidates[0].r, c: candidates[0].c };
+        }
 
-        let bestMinimaxScore = -Infinity;
-        let bestMinimaxPos: Point | null = null;
+        // 2-Ply Minimax Lookahead (AI move -> Opponent's strongest counter-move)
+        const topN = isExtreme ? 14 : isHardOrAbove ? 10 : 6;
+        // Pre-rank the most dangerous opponent replies so minimax is ultra-fast and focused
+        const oppThreatOrder = [...candidates]
+            .map(c => {
+                const oppPathLen = baseOpp.distA[c.flat] + baseOpp.distB[c.flat] - 1;
+                const myPathLen = baseMy.distA[c.flat] + baseMy.distB[c.flat] - 1;
+                let threat = 0;
+                if (oppPathLen === baseOpp.minDist) threat += 500;
+                else if (oppPathLen === baseOpp.minDist + 1) threat += 200;
+                if (myPathLen === baseMy.minDist) threat += 300;
+                threat += saveMyBridgeScore[c.flat] + cutOppBridgeScore[c.flat] + spearheadBlockBonus[c.flat] * 0.5;
+                return { flat: c.flat, threat };
+            })
+            .sort((a, b) => b.threat - a.threat);
+
+        const maxOppReplies = isExtreme ? 22 : isHardOrAbove ? 16 : 10;
+
+        let bestCombinedScore = -Infinity;
+        let bestMove: Point = { r: candidates[0].r, c: candidates[0].c };
 
         for (let i = 0; i < Math.min(topN, candidates.length); i++) {
             const cand = candidates[i];
-            if (candidates[0].score >= 9000 && cand.score < 9000) continue; // Only evaluate game-savers if any
+            board[cand.flat] = 1;
 
-            const candKey = `${cand.r},${cand.c}`;
-            myPosSet.add(candKey);
-            
-            let minScoreAfterOpp = Infinity;
-            
-            for (let oppR = 0; oppR < 11; oppR++) {
-                for (let oppC = 0; oppC < 11; oppC++) {
-                    const oppKey = `${oppR},${oppC}`;
-                    if (myPosSet.has(oppKey) || oppPosSet.has(oppKey)) continue;
+            let worstPostOppScore = Infinity;
 
-                    oppPosSet.add(oppKey);
-                    
-                    const postOppMyDist = computeHexDist(myPosSet, oppPosSet, isP1);
-                    const postOppOppDist = computeHexDist(oppPosSet, myPosSet, !isP1);
-                    
-                    if (postOppOppDist === 0) {
-                        minScoreAfterOpp = -1000000;
-                        oppPosSet.delete(oppKey);
+            // Check if opponent has an immediate 1-move win after cand
+            if (cand.oppMinDist === 1) {
+                for (let u = 0; u < 121; u++) {
+                    if (board[u] !== 0) continue;
+                    board[u] = 2;
+                    const oppCheck = computeFastEffective(board, 2, !isP1);
+                    board[u] = 0;
+                    if (oppCheck.minDist === 0) {
+                        worstPostOppScore = -1000000;
                         break;
                     }
-                    
-                    const flatIdxC = cand.r * 11 + cand.c;
-                    const isMyPathC = myShortestPath.has(flatIdxC);
-                    const isOppPathC = oppShortestPath.has(flatIdxC);
-
-                    let boardScore = evaluateMove(postOppMyDist, postOppOppDist, cand.r, cand.c, baselineMyDist, postOppOppDist, difficulty, isMyPathC, isOppPathC);
-                    
-                    if (boardScore < minScoreAfterOpp) minScoreAfterOpp = boardScore;
-
-                    oppPosSet.delete(oppKey);
                 }
-                if (minScoreAfterOpp === -1000000) break;
             }
-            
-            myPosSet.delete(candKey);
-            
-            if (minScoreAfterOpp > bestMinimaxScore) {
-                bestMinimaxScore = minScoreAfterOpp;
-                bestMinimaxPos = { r: cand.r, c: cand.c };
+
+            if (worstPostOppScore > -500000) {
+                let checkedReplies = 0;
+                for (let j = 0; j < oppThreatOrder.length && checkedReplies < maxOppReplies; j++) {
+                    const oppFlat = oppThreatOrder[j].flat;
+                    if (board[oppFlat] !== 0) continue;
+                    checkedReplies++;
+
+                    board[oppFlat] = 2;
+                    const postMy = computeFastEffective(board, 1, isP1);
+                    const postOpp = computeFastEffective(board, 2, !isP1);
+                    board[oppFlat] = 0;
+
+                    if (postOpp.minDist === 0) {
+                        worstPostOppScore = -1000000;
+                        break;
+                    }
+
+                    const netMyGain = baseMy.effectiveDist - postMy.effectiveDist;
+                    const netOppDelay = postOpp.effectiveDist - baseOpp.effectiveDist;
+                    let replyBoardScore = netMyGain * attackWeight + netOppDelay * defenseWeight;
+
+                    if (postOpp.minDist === 1) replyBoardScore -= 3500;
+                    else if (postOpp.vMinDist <= 1) replyBoardScore -= 1200;
+
+                    if (replyBoardScore < worstPostOppScore) {
+                        worstPostOppScore = replyBoardScore;
+                    }
+                }
+            }
+
+            board[cand.flat] = 0;
+
+            const combinedScore = worstPostOppScore * 0.65 + cand.score * 0.35 + cand.tacticalBonus * 0.45;
+            if (combinedScore > bestCombinedScore) {
+                bestCombinedScore = combinedScore;
+                bestMove = { r: cand.r, c: cand.c };
             }
         }
-        
-        return bestMinimaxPos || { r: candidates[0].r, c: candidates[0].c };
-    }
 
-    let bestPos: Point | null = null;
-    let bestScore = -Infinity;
+        return bestMove;
+    }
 
     let centerR = 3;
     let centerC = 3;
@@ -1974,16 +2430,14 @@ export const getBestSetupForAI = (gameState: GameState): Point => {
     else if (theme === 'desert') { centerR = 4; centerC = 4.5; }
     else if (theme === 'pente') { centerR = 7; centerC = 7; }
 
+    const setupCandidates: { pos: Point; score: number }[] = [];
+
     for (let r = 0; r < GRID_SIZE; r++) {
         for (let c = 0; c < GRID_SIZE; c++) {
             if (!isValidCell(r, c, theme)) continue;
 
             const isOccupied = gameState.players.some(p => p.positions.some(pos => pos.r === r && pos.c === c));
             if (isOccupied) continue;
-
-            if (bestPos === null) {
-                bestPos = { r, c };
-            }
 
             let minOppDist = Infinity;
             let minOwnDist = Infinity;
@@ -2006,21 +2460,26 @@ export const getBestSetupForAI = (gameState: GameState): Point => {
             if (difficulty === 'normale') {
                 score = -(distToCenter * 2);
                 if (minOppDist < 2) score -= 50;
-                score += Math.random() * 10;
+                score += Math.random() * 18;
             } else if (difficulty === 'difficile') {
-                score = -(distToCenter * 3);
-                if (minOppDist < 2) score -= 100;
-                if (minOppDist >= 3 && minOppDist <= 5) score += 30;
-                if (minOwnDist < 3) score -= 50;
+                // Inner plateau so all central/inner-ring cells compete fairly with rich variety
+                const effectiveCenterDist = Math.max(0, distToCenter - 1.5);
+                score = -(effectiveCenterDist * 4);
+                if (minOppDist < 2) score -= 120;
+                if (minOppDist >= 2 && minOppDist <= 5) score += 35;
+                if (minOwnDist < 3) score -= 60;
+                score += Math.random() * 25;
             } else {
-                // 'estrema' (Dango)
-                score -= distToCenter * 5;
+                // 'estrema' (Difficile): central plateau (distToCenter <= 2) + good tactical spacing + stochastic variety
+                const effectiveCenterDist = Math.max(0, distToCenter - 2);
+                score -= effectiveCenterDist * 6 + distToCenter * 1.5;
                 
-                if (minOppDist < 2) score -= 200;
-                if (minOppDist === 2 || minOppDist === 3) score += 50;
+                if (minOppDist < 2) score -= 220;
+                if (minOppDist >= 2 && minOppDist <= 4) score += 50;
                 
-                if (minOwnDist < 3) score -= 150;
-                if (minOwnDist >= 4) score += 40;
+                if (minOwnDist < 2) score -= 200;
+                else if (minOwnDist === 2) score -= 60;
+                else if (minOwnDist >= 3) score += 40;
 
                 let validNeighbors = 0;
                 const neighbors = getNeighbors(r, c, theme);
@@ -2029,16 +2488,19 @@ export const getBestSetupForAI = (gameState: GameState): Point => {
                 }
                 score += validNeighbors * 10;
                 
-                score += Math.random() * 5;
+                score += Math.random() * 26;
             }
-            
-            if (score > bestScore) {
-                bestScore = score;
-                bestPos = { r, c };
-            }
+
+            setupCandidates.push({ pos: { r, c }, score });
         }
     }
-    return bestPos || { r: 0, c: 0 };
+
+    if (setupCandidates.length === 0) return { r: 0, c: 0 };
+    setupCandidates.sort((a, b) => b.score - a.score);
+    const topSetupScore = setupCandidates[0].score;
+    const topPool = setupCandidates.filter(c => topSetupScore - c.score <= 20);
+    const chosenSetup = topPool[Math.floor(Math.random() * topPool.length)];
+    return chosenSetup ? chosenSetup.pos : setupCandidates[0].pos;
 };
 
 export interface BreakAction {
@@ -2138,8 +2600,9 @@ export const getBestDomineeringMoveForAI = (gameState: GameState, playerId: Play
     
     score = myNextMoves - oppMoves;
 
-    // Aggiungiamo un po' di disturbo per evitare giocate identiche se i punteggi sono uguali
-    score += Math.random() * 0.1;
+    // Aggiungiamo variabilità nelle prime mosse per evitare aperture sempre identiche
+    const dominoJitter = occupied.size <= 8 ? Math.random() * 2.2 : Math.random() * 0.4;
+    score += dominoJitter;
 
     // Per livelli più difficili controlliamo anche se stacchiamo l'avversario
     if (difficulty === 'estrema' || difficulty === 'difficile') {
@@ -2484,10 +2947,13 @@ export const getBestShobuMoveForAI = (gameState: GameState, playerId: PlayerId, 
            score += centerBonus(m.active.toR, m.active.toC);
         }
 
-        score += Math.random() * 2;
+        score += Math.random() * 4.5;
         return score;
     };
 
-    allMoves.sort((a, b) => scoreMove(b) - scoreMove(a));
-    return allMoves[0];
+    const scoredShobuMoves = allMoves.map(m => ({ move: m, score: scoreMove(m) }));
+    scoredShobuMoves.sort((a, b) => b.score - a.score);
+    const bestShobuScore = scoredShobuMoves[0].score;
+    const topShobuPool = scoredShobuMoves.filter(item => bestShobuScore - item.score <= 3.5);
+    return (topShobuPool[Math.floor(Math.random() * topShobuPool.length)] || scoredShobuMoves[0]).move;
 };

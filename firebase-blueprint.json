@@ -114,6 +114,23 @@
         "status": { "type": "string" }
       },
       "required": ["roomId", "gameMode", "status"]
+    },
+    "AppConfig": {
+      "title": "AppConfig",
+      "description": "Global application configuration controlled by admin.",
+      "type": "object",
+      "properties": {
+        "requirePointsToUnlock": {
+          "type": "boolean",
+          "description": "Whether players must spend points to unlock games."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp of the last configuration update."
+        }
+      },
+      "required": ["requirePointsToUnlock"]
     }
   },
   "firestore": {
@@ -132,6 +149,10 @@
     "/online_rooms/{roomId}": {
       "schema": { "$ref": "#/entities/OnlineRoom" },
       "description": "Active online multiplayer game rooms."
+    },
+    "/app_config/{configId}": {
+      "schema": { "$ref": "#/entities/AppConfig" },
+      "description": "Global application configuration controlled by admin."
     }
   }
 }

@@ -186,6 +186,7 @@ export const getBestYinshMoveForAI = (state: YinshState, playerId: PlayerId, dif
        const myRings = state.rings.filter(r => r.playerId === playerId);
        let bestPt: YinshPoint | null = null;
        let bestObj = -Infinity;
+       const ringCandidates: { pt: YinshPoint; obj: number }[] = [];
 
        for (const pt of emptyPoints) {
           const distFromCenter = Math.max(Math.abs(pt.q), Math.abs(pt.r), Math.abs(-pt.q - pt.r));
@@ -199,17 +200,25 @@ export const getBestYinshMoveForAI = (state: YinshState, playerId: PlayerId, dif
           if (minDistToMine !== Infinity) {
              if (minDistToMine === 1) spacingBonus = -2;
              else if (minDistToMine === 2) spacingBonus = 2;
-             else if (minDistToMine === 3) spacingBonus = 1;
+             else if (minDistToMine === 3) spacingBonus = 1.5;
              else spacingBonus = -0.5;
           }
           
-          let obj = -distFromCenter + spacingBonus;
-          obj += Math.random() * 0.1;
+          const effectiveCenterDist = Math.max(0, distFromCenter - 1.5);
+          let obj = -effectiveCenterDist * 1.2 + spacingBonus + Math.random() * 1.8;
+          ringCandidates.push({ pt, obj });
           
           if (obj > bestObj) {
             bestObj = obj;
             bestPt = pt;
           }
+       }
+       if (ringCandidates.length > 1) {
+         ringCandidates.sort((a, b) => b.obj - a.obj);
+         const topRingObj = ringCandidates[0].obj;
+         const topRingPool = ringCandidates.filter(c => topRingObj - c.obj <= 1.2);
+         const chosenRing = topRingPool[Math.floor(Math.random() * topRingPool.length)];
+         if (chosenRing) return { action: 'place_ring', pt: chosenRing.pt };
        }
        return { action: 'place_ring', pt: bestPt || emptyPoints[0] };
     }
@@ -242,6 +251,8 @@ export const getBestYinshMoveForAI = (state: YinshState, playerId: PlayerId, dif
         return sc;
       };
 
+      const totalMarkers = Object.keys(state.markers).length;
+      const earlyJitter = totalMarkers <= 6 ? 1.8 : 0.45;
       let bestMove: {from: YinshPoint, to: YinshPoint} | null = null;
       let bestScore = -Infinity;
       
@@ -278,8 +289,8 @@ export const getBestYinshMoveForAI = (state: YinshState, playerId: PlayerId, dif
              score += myCenterRings * 0.2;
           }
           
-          // Small random factor to break ties
-          score += Math.random() * 0.1;
+          // Random factor for early-game opening variety and breaking ties
+          score += Math.random() * earlyJitter;
 
           if (score > bestScore) {
             bestScore = score;

@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Outer Rounded Tile Frame inside 72dp Safe Zone -->
+    <path
+        android:pathData="M34,24L74,24A10,10 0 0,1 84,34L84,74A10,10 0 0,1 74,84L34,84A10,10 0 0,1 24,74L24,34A10,10 0 0,1 34,24Z"
+        android:fillColor="#FF020617"
+        android:strokeWidth="1.5">
+        <aapt:attr name="android:strokeColor">
+            <gradient
+                android:startX="24"
+                android:startY="24"
+                android:endX="84"
+                android:endY="84"
+                android:type="linear">
+                <item android:offset="0" android:color="#FF3B82F6" />
+                <item android:offset="1" android:color="#FF10B981" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Inner Grid Lines inside Tile -->
+    <path
+        android:pathData="M24,44H84M24,64H84M44,24V84M64,24V84"
+        android:strokeWidth="0.5"
+        android:strokeColor="#18FFFFFF" />
+
+    <!-- Soft Glow Behind W-Walls -->
+    <path
+        android:pathData="M36,38V70L54,52"
+        android:strokeWidth="9.5"
+        android:strokeColor="#403B82F6"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M54,52L72,70V38"
+        android:strokeWidth="9.5"
+        android:strokeColor="#4010B981"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+
+    <!-- Left Wall (Blue) -->
+    <path
+        android:pathData="M36,38V70L54,52"
+        android:strokeWidth="5.5"
+        android:strokeColor="#FF3B82F6"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+
+    <!-- Right Wall (Emerald) -->
+    <path
+        android:pathData="M54,52L72,70V38"
+        android:strokeWidth="5.5"
+        android:strokeColor="#FF10B981"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+
+    <!-- Central Red Pawn -->
+    <path
+        android:pathData="M54,50m-7.5,0a7.5,7.5 0,1 1,15 0a7.5,7.5 0,1 1,-15 0"
+        android:fillColor="#FFEF4444" />
+
+    <!-- Pawn Specular Highlight -->
+    <path
+        android:pathData="M51.5,47.5m-2,0a2,2 0,1 1,4 0a2,2 0,1 1,-4 0"
+        android:fillColor="#99FFFFFF" />
+</vector>

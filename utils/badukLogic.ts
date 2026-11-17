@@ -403,13 +403,19 @@ export const getBestBadukMoveForAI = (gameState: GameState, playerId: number, di
         const occupied = new Set<string>();
         gameState.players.forEach(pl => pl.positions.forEach(pos => occupied.add(`${pos.r},${pos.c}`)));
 
-        // Try primary 4 corner star points first
-        const emptyCorners = starPoints.slice(0, 4).filter(pt => !occupied.has(`${pt.r},${pt.c}`));
+        // Try primary 4 corner star points first (verified legal)
+        const emptyCorners = starPoints.slice(0, 4).filter(pt => {
+            if (occupied.has(`${pt.r},${pt.c}`)) return false;
+            return performBadukMove(gameState.players, pt.r, pt.c, myIndex, size, gameState.badukKoPoint).valid;
+        });
         if (emptyCorners.length > 0) {
             return emptyCorners[Math.floor(Math.random() * emptyCorners.length)];
         }
 
-        const emptyOthers = starPoints.slice(4).filter(pt => !occupied.has(`${pt.r},${pt.c}`));
+        const emptyOthers = starPoints.slice(4).filter(pt => {
+            if (occupied.has(`${pt.r},${pt.c}`)) return false;
+            return performBadukMove(gameState.players, pt.r, pt.c, myIndex, size, gameState.badukKoPoint).valid;
+        });
         if (emptyOthers.length > 0) {
             return emptyOthers[Math.floor(Math.random() * emptyOthers.length)];
         }
@@ -444,19 +450,51 @@ export const getBestBadukMoveForAI = (gameState: GameState, playerId: number, di
 
     let validMoves: {r: number, c: number, score: number, newPlayers?: Player[]}[] = [];
     
-    // Evaluate current territory so we don't play blindly inside opponent's secure territory
-    const { territoryMap, scores: terrScores } = calculateTerritory(gameState.walls, gameState.players, theme);
+    // Evaluate current territory, but only treat small enclosed regions (<= 6 intersections) as settled uninvadable territory
+    // so the AI still invades large opponent frameworks instead of passing prematurely!
+    const { territoryMap: rawTerritoryMap, scores: terrScores } = calculateTerritory(gameState.walls, gameState.players, theme);
+    const territoryMap: Record<string, PlayerId> = {};
+    const visitedEmpty = new Set<string>();
+    for (let r = 0; r < size; r++) {
+        for (let c = 0; c < size; c++) {
+            const k = `${r},${c}`;
+            const owner = rawTerritoryMap[k];
+            if (!owner || visitedEmpty.has(k)) continue;
+            const comp: string[] = [k];
+            visitedEmpty.add(k);
+            let head = 0;
+            while (head < comp.length) {
+                const currKey = comp[head++];
+                const [cr, cc] = currKey.split(',').map(Number);
+                for (const [nr, nc] of getBadukNeighbors(cr, cc)) {
+                    if (nr < 0 || nc < 0 || nr >= size || nc >= size) continue;
+                    const nk = `${nr},${nc}`;
+                    if (!visitedEmpty.has(nk) && rawTerritoryMap[nk] === owner) {
+                        visitedEmpty.add(nk);
+                        comp.push(nk);
+                    }
+                }
+            }
+            // Only mark as settled uninvadable territory if the enclosed eye-space is small (<= 6 points)
+            if (comp.length <= 6) {
+                comp.forEach(ck => {
+                    territoryMap[ck] = owner;
+                });
+            }
+        }
+    }
+
     const oppPlayerId = gameState.players[oppIndex].id;
     let isLosing = false;
 
-    if (gameState.consecutivePasses > 0) {
+    if (gameState.consecutivePasses > 0 && totalStones >= Math.floor(size * size * 0.45)) {
         const starterIdx = gameState.startingPlayerIndex || 0;
         const myScore = (terrScores[playerId as PlayerId] || 0) + gameState.players[myIndex].positions.length + (playerId !== gameState.players[starterIdx].id ? 7.5 : 0);
         const oppScore = (terrScores[oppPlayerId as PlayerId] || 0) + gameState.players[oppIndex].positions.length + (oppPlayerId !== gameState.players[starterIdx].id ? 7.5 : 0);
-        if (myScore > oppScore) {
-            return null; // The human passed and we are winning, pass to end the game!
+        if (myScore > oppScore + 1.5 && myGroupsInAtari.length === 0 && oppGroupsInAtari.length === 0) {
+            return null; // The human passed in the endgame and we are clearly winning, pass to end the game!
         }
-        isLosing = true;
+        isLosing = myScore < oppScore;
     }
 
     for (let r=0; r<size; r++) {
@@ -494,6 +532,7 @@ export const getBestBadukMoveForAI = (gameState: GameState, playerId: number, di
             
             const myColor = playerId === gameState.players[starterIdx].id ? BLACK : WHITE;
             board.to_move = myColor;
+            board.consecutive_passes = gameState.consecutivePasses || 0;
             
             const ai = new MCTSEngine(size); 
             const color = myColor;
@@ -505,10 +544,17 @@ export const getBestBadukMoveForAI = (gameState: GameState, playerId: number, di
             
             const move = ai.get_move(board, color, searchTime); 
             
-            if (isLosing && move !== null && ai._last_stats && ai._last_stats.children && ai._last_stats.children.length > 0) {
+            if (
+                isLosing &&
+                totalStones >= Math.floor(size * size * 0.65) &&
+                move !== null &&
+                ai._last_stats &&
+                ai._last_stats.children &&
+                ai._last_stats.children.length > 0
+            ) {
                  const bestQ = parseFloat(ai._last_stats.children[0][2]);
-                 if (bestQ < 0.10) {
-                     return null; // Concede, human passed and we are losing with no good moves
+                 if (bestQ < 0.02 && validMoves[0].score <= 0) {
+                     return null; // Concede only in hopeless late endgame when human passed
                  }
             }
 
@@ -554,20 +600,24 @@ export const getBestBadukMoveForAI = (gameState: GameState, playerId: number, di
         }
 
         // Return logic
-        if (isLosing && validMoves[0].score <= 0) {
-            return null; // Concede
+        if (isLosing && totalStones >= Math.floor(size * size * 0.65) && validMoves[0].score <= 0) {
+            return null; // Concede in late endgame
         }
         if (validMoves[0].score <= -2000) {
-            return null; // Pass
+            return null; // Pass only when all remaining moves are self-atari or inside settled small territories
         }
         
         if (difficulty === "normale") {
-            const poolSize = Math.max(1, Math.min(3, validMoves.length)); // Top 3
-            const pick = validMoves[Math.floor(Math.random() * poolSize)];
+            const goodMoves = validMoves.filter(m => m.score > -1000);
+            const pool = goodMoves.length > 0 ? goodMoves : validMoves;
+            const poolSize = Math.max(1, Math.min(3, pool.length)); // Top 3
+            const pick = pool[Math.floor(Math.random() * poolSize)];
             return {r: pick.r, c: pick.c};
         } else if (difficulty === "facile") {
-            const poolSize = Math.max(1, Math.min(5, validMoves.length)); // Top 5 for natural casual play
-            const pick = validMoves[Math.floor(Math.random() * poolSize)];
+            const goodMoves = validMoves.filter(m => m.score > -1000);
+            const pool = goodMoves.length > 0 ? goodMoves : validMoves;
+            const poolSize = Math.max(1, Math.min(5, pool.length)); // Top 5 for natural casual play
+            const pick = pool[Math.floor(Math.random() * poolSize)];
             return {r: pick.r, c: pick.c};
         } else {
             return {r: validMoves[0].r, c: validMoves[0].c}; // Absolute best for Difficile/Estrema if MCTS fails

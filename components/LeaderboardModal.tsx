@@ -32,7 +32,7 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({ onClose, lan
   const [myAggregatedScore, setMyAggregatedScore] = useState<number>(currentScore);
   const [myTotalGamesLabel, setMyTotalGamesLabel] = useState<number>(0);
   const [activeTab, setActiveTab] = useState<'leaderboard' | 'stats' | 'badges'>('leaderboard');
-  const [leaderboardMode, setLeaderboardMode] = useState<'dominio' | 'corsa' | 'amazons' | 'domineering' | 'abalone' | 'orbito' | 'hex' | 'pente' | 'chain_triangle' | 'shobu' | 'yinsh' | 'onitama' | 'baduk' | 'stratego' | 'generale'>('generale');
+  const [leaderboardMode, setLeaderboardMode] = useState<'dominio' | 'corsa' | 'amazons' | 'domineering' | 'abalone' | 'orbito' | 'hex' | 'pente' | 'chain_triangle' | 'shobu' | 'yinsh' | 'onitama' | 'baduk' | 'stratego' | 'quarto' | 'pylos' | 'generale'>('generale');
   const t = translations[language];
 
   useEffect(() => {
@@ -43,7 +43,7 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({ onClose, lan
     const fetchLeaderboard = async () => {
       setLoading(true);
       try {
-        const scoreField = leaderboardMode === 'stratego' ? 'totalStrategoScore' : (leaderboardMode === 'baduk' ? 'totalBadukScore' : (leaderboardMode === 'pente' ? 'totalPenteScore' : (leaderboardMode === 'chain_triangle' ? 'totalChainTriangleScore' : (leaderboardMode === 'shobu' ? 'totalShobuScore' : (leaderboardMode === 'yinsh' ? 'totalYinshScore' : (leaderboardMode === 'onitama' ? 'totalOnitamaScore' : (leaderboardMode === 'orbito' ? 'totalOrbitoScore' : (leaderboardMode === 'corsa' ? 'totalFugaScore' : (leaderboardMode === 'amazons' ? 'totalAmazonsScore' : (leaderboardMode === 'domineering' ? 'totalDomineeringScore' : (leaderboardMode === 'abalone' ? 'totalAbaloneScore' : (leaderboardMode === 'hex' ? 'totalHexScore' : (leaderboardMode === 'generale' ? 'totalScoreOverall' : 'totalScore')))))))))))));
+        const scoreField = leaderboardMode === 'pylos' ? 'totalPylosScore' : (leaderboardMode === 'quarto' ? 'totalQuartoScore' : (leaderboardMode === 'stratego' ? 'totalStrategoScore' : (leaderboardMode === 'baduk' ? 'totalBadukScore' : (leaderboardMode === 'pente' ? 'totalPenteScore' : (leaderboardMode === 'chain_triangle' ? 'totalChainTriangleScore' : (leaderboardMode === 'shobu' ? 'totalShobuScore' : (leaderboardMode === 'yinsh' ? 'totalYinshScore' : (leaderboardMode === 'onitama' ? 'totalOnitamaScore' : (leaderboardMode === 'orbito' ? 'totalOrbitoScore' : (leaderboardMode === 'corsa' ? 'totalFugaScore' : (leaderboardMode === 'amazons' ? 'totalAmazonsScore' : (leaderboardMode === 'domineering' ? 'totalDomineeringScore' : (leaderboardMode === 'abalone' ? 'totalAbaloneScore' : (leaderboardMode === 'hex' ? 'totalHexScore' : (leaderboardMode === 'generale' ? 'totalScoreOverall' : 'totalScore')))))))))))))));
         const q = query(collection(db, 'leaderboard'), orderBy(scoreField, 'desc'), limit(200));
         const snapshot = await getDocs(q);
         const data: LeaderboardEntry[] = [];
@@ -51,10 +51,17 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({ onClose, lan
         const expiredDeletions: Promise<any>[] = [];
 
         snapshot.forEach(docSnap => {
-          const docData = docSnap.data();
+          const docData = { ...docSnap.data() };
           if (isSimulatedPlayerExpired(docData, docSnap.id, nowTime)) {
             expiredDeletions.push(deleteDoc(doc(db, 'leaderboard', docSnap.id)).catch(() => {}));
             return;
+          }
+          if (docSnap.id.startsWith('zioseb') && typeof docData.totalScore === 'number' && docData.totalScore > 2400) {
+            const cleanBase = Number((docData.totalScore - 1180.8211157937977).toFixed(6));
+            if (typeof docData.totalScoreOverall === 'number') {
+              docData.totalScoreOverall = Math.max(0, docData.totalScoreOverall - (docData.totalScore - cleanBase));
+            }
+            docData.totalScore = cleanBase;
           }
           data.push({ id: docSnap.id, ...docData } as LeaderboardEntry);
         });
@@ -98,14 +105,25 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({ onClose, lan
              actualScore = (stats as any)?.totalBadukScore ?? 0;
           } else if (leaderboardMode === 'stratego') {
              actualScore = (stats as any)?.totalStrategoScore ?? 0;
+          } else if (leaderboardMode === 'quarto') {
+             actualScore = (stats as any)?.totalQuartoScore ?? 0;
+          } else if (leaderboardMode === 'pylos') {
+             actualScore = (stats as any)?.totalPylosScore ?? 0;
           } else {
-             actualScore = (stats?.totalScore || 0) + (stats?.totalFugaScore || 0) + (stats?.totalAmazonsScore || 0) + (stats?.totalDomineeringScore || 0) + ((stats as any)?.totalAbaloneScore || 0) + ((stats as any)?.totalHexScore || 0) + ((stats as any)?.totalOrbitoScore || 0) + ((stats as any)?.totalPenteScore || 0) + ((stats as any)?.totalChainTriangleScore || 0) + ((stats as any)?.totalShobuScore || 0) + ((stats as any)?.totalYinshScore || 0) + ((stats as any)?.totalOnitamaScore || 0) + ((stats as any)?.totalBadukScore || 0) + ((stats as any)?.totalStrategoScore || 0);
+             actualScore = (stats?.totalScore || 0) + (stats?.totalFugaScore || 0) + (stats?.totalAmazonsScore || 0) + (stats?.totalDomineeringScore || 0) + ((stats as any)?.totalAbaloneScore || 0) + ((stats as any)?.totalHexScore || 0) + ((stats as any)?.totalOrbitoScore || 0) + ((stats as any)?.totalPenteScore || 0) + ((stats as any)?.totalChainTriangleScore || 0) + ((stats as any)?.totalShobuScore || 0) + ((stats as any)?.totalYinshScore || 0) + ((stats as any)?.totalOnitamaScore || 0) + ((stats as any)?.totalBadukScore || 0) + ((stats as any)?.totalStrategoScore || 0) + ((stats as any)?.totalQuartoScore || 0) + ((stats as any)?.totalPylosScore || 0);
           }
           
           if (slug) {
             const myDoc = await getDoc(doc(db, 'leaderboard', slug));
             if (myDoc.exists()) {
-              const data = myDoc.data();
+              const data = { ...myDoc.data() };
+              if (slug.startsWith('zioseb') && typeof data.totalScore === 'number' && data.totalScore > 2400) {
+                const cleanBase = Number((data.totalScore - 1180.8211157937977).toFixed(6));
+                if (typeof data.totalScoreOverall === 'number') {
+                  data.totalScoreOverall = Math.max(0, data.totalScoreOverall - (data.totalScore - cleanBase));
+                }
+                data.totalScore = cleanBase;
+              }
               const dbScore = data[scoreField];
               if (dbScore !== undefined && dbScore !== null) {
                  actualScore = dbScore;
@@ -141,9 +159,11 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({ onClose, lan
               const orbitoG = calcGamesObj(stats?.orbitoStats);
               const badukG = calcGamesObj(stats?.badukStats);
               const strategoG = calcGamesObj(stats?.strategoStats);
+              const quartoG = calcGamesObj((stats as any)?.quartoStats);
+              const pylosG = calcGamesObj((stats as any)?.pylosStats);
 
               if (leaderboardMode === 'generale') {
-                setMyTotalGamesLabel(baseG + corsaG + amazonsG + domineeringG + abaloneG + hexG + chainG + penteG + shobuG + yinshG + onitamaG + orbitoG + badukG + strategoG);
+                setMyTotalGamesLabel(baseG + corsaG + amazonsG + domineeringG + abaloneG + hexG + chainG + penteG + shobuG + yinshG + onitamaG + orbitoG + badukG + strategoG + quartoG + pylosG);
               } else if (leaderboardMode === 'dominio') {
                 setMyTotalGamesLabel(baseG);
               } else {
@@ -151,7 +171,7 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({ onClose, lan
                   corsa: corsaG, amazons: amazonsG, domineering: domineeringG, abalone: abaloneG,
                   hex: hexG, chain_triangle: chainG, pente: penteG, shobu: shobuG,
                   yinsh: yinshG, onitama: onitamaG, orbito: orbitoG, baduk: badukG,
-                  stratego: strategoG
+                  stratego: strategoG, quarto: quartoG, pylos: pylosG
                 };
                 setMyTotalGamesLabel(mapMode[leaderboardMode] || 0);
               }
@@ -183,11 +203,11 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({ onClose, lan
   const displayedEntries = entries.slice(startIndex, endIndex);
 
   const panelContent = (
-    <div className={isInline ? "w-full h-full flex flex-col min-h-0" : "w-full max-w-md bg-slate-900 rounded-[2.5rem] p-6 flex flex-col max-h-[90vh] animate-in slide-in-from-bottom duration-300 shadow-2xl border border-white/10"}>
-      <div className="flex justify-between items-center mb-4 shrink-0">
-        <div className="flex items-center gap-2">
-          <span className="text-xl sm:text-2xl">{activeTab === 'leaderboard' ? '🏆' : activeTab === 'stats' ? '📊' : '🎖️'}</span>
-          <h2 className="text-lg sm:text-2xl font-black italic text-blue-400 uppercase tracking-tight">
+    <div className={isInline ? "w-full h-full flex flex-col min-h-0 overflow-hidden" : "w-full max-w-md bg-slate-900 rounded-[2.5rem] p-6 flex flex-col max-h-[90vh] animate-in slide-in-from-bottom duration-300 shadow-2xl border border-white/10"}>
+      <div className="flex justify-between items-center mb-3 lg:mb-4 shrink-0 min-w-0">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="text-xl lg:text-2xl shrink-0">{activeTab === 'leaderboard' ? '🏆' : activeTab === 'stats' ? '📊' : '🎖️'}</span>
+          <h2 className="text-sm md:text-base lg:text-xl font-black italic text-blue-400 uppercase tracking-tight truncate">
             {language === 'it' ? 'CLASSIFICHE' : 'RANK & STATS'}
           </h2>
         </div>
@@ -196,25 +216,25 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({ onClose, lan
         )}
       </div>
 
-      <div className="flex gap-1.5 mb-3 text-[10px] uppercase tracking-widest sm:text-xs sm:tracking-normal w-full overflow-x-auto shrink-0 custom-scrollbar">
+      <div className="flex gap-1.5 mb-2.5 lg:mb-3 text-[10px] uppercase tracking-wider lg:text-xs lg:tracking-normal w-full overflow-x-auto shrink-0 custom-scrollbar">
           <button 
               onClick={() => {
                 setActiveTab('leaderboard');
                 setCurrentPage(0);
               }} 
-              className={`flex-1 min-w-0 px-1 py-2 rounded-xl font-bold transition-all ${activeTab === 'leaderboard' ? 'bg-amber-600 text-white shadow-lg' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}
+              className={`flex-1 min-w-0 px-1 py-1.5 lg:py-2 rounded-xl font-bold transition-all ${activeTab === 'leaderboard' ? 'bg-amber-600 text-white shadow-lg' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}
           >
               TOP 10
           </button>
           <button 
               onClick={() => setActiveTab('stats')} 
-              className={`flex-1 min-w-0 px-1 py-2 rounded-xl font-bold transition-all ${activeTab === 'stats' ? 'bg-emerald-600 text-white shadow-lg' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}
+              className={`flex-1 min-w-0 px-1 py-1.5 lg:py-2 rounded-xl font-bold transition-all ${activeTab === 'stats' ? 'bg-emerald-600 text-white shadow-lg' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}
           >
               STATS
           </button>
           <button 
               onClick={() => setActiveTab('badges')} 
-              className={`flex-1 min-w-0 px-1 py-2 rounded-xl font-bold transition-all ${activeTab === 'badges' ? 'bg-purple-600 text-white shadow-lg' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}
+              className={`flex-1 min-w-0 px-1 py-1.5 lg:py-2 rounded-xl font-bold transition-all ${activeTab === 'badges' ? 'bg-purple-600 text-white shadow-lg' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}
           >
               BADGES
           </button>
@@ -245,6 +265,8 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({ onClose, lan
                 <option value="yinsh">💍 Yinsh</option>
                 <option value="onitama">🏯 Onitama</option>
                 <option value="baduk">⚫ Baduk / Go</option>
+                <option value="quarto">🧩 Quarto</option>
+                <option value="pylos">🔺 Pylos</option>
                 <option value="stratego">🚩 Stratego</option>
               </select>
             </div>
@@ -264,7 +286,11 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({ onClose, lan
                           : currentUserName ? currentUserName.toLowerCase().replace(/[^a-z0-9]/g, '_') : '';
                         const isMe = listSlug === entry.id;
                         const scoreFieldItem =
-                          leaderboardMode === "stratego"
+                          leaderboardMode === "pylos"
+                            ? "totalPylosScore"
+                            : leaderboardMode === "quarto"
+                            ? "totalQuartoScore"
+                            : leaderboardMode === "stratego"
                             ? "totalStrategoScore"
                             : leaderboardMode === "baduk"
                             ? "totalBadukScore"
@@ -316,12 +342,12 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({ onClose, lan
 
                 {/* Pagination Controls */}
                 {!loading && entries.length > 0 && (
-                  <div className="flex items-center justify-between gap-1 px-2 py-1.5 mt-2 mb-1 bg-slate-950/70 rounded-xl border border-white/10 shrink-0 select-none">
+                  <div className="flex items-center justify-between gap-1 px-1.5 lg:px-2 py-1.5 mt-2 mb-1 bg-slate-950/70 rounded-xl border border-white/10 shrink-0 select-none">
                     <button
                       type="button"
                       disabled={safePage === 0}
                       onClick={() => setCurrentPage(p => Math.max(0, p - 1))}
-                      className={`px-2.5 py-1.5 rounded-lg font-bold flex items-center gap-1 transition-all active:scale-95 ${
+                      className={`px-2 lg:px-2.5 py-1.5 rounded-lg font-bold flex items-center gap-1 transition-all active:scale-95 ${
                         safePage === 0
                           ? 'opacity-30 text-slate-500 cursor-not-allowed bg-slate-800/30'
                           : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border border-white/10 hover:border-white/20'
@@ -329,15 +355,17 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({ onClose, lan
                       title={language === 'it' ? 'Visualizza i 10 precedenti' : 'View previous 10'}
                     >
                       <span className="text-xs">◀</span>
-                      <span className="text-[11px] whitespace-nowrap">{language === 'it' ? 'Precedenti 10' : 'Previous 10'}</span>
+                      <span className="text-[10px] lg:text-[11px] whitespace-nowrap">
+                        <span className="hidden xl:inline">{language === 'it' ? 'Precedenti ' : 'Previous '}</span>10
+                      </span>
                     </button>
 
                     <div className="flex flex-col items-center justify-center leading-tight px-1 min-w-0">
-                      <span className="text-[11px] font-black text-amber-400 uppercase tracking-tight whitespace-nowrap">
-                        {language === 'it' ? `Pos. ${startIndex + 1} - ${endIndex}` : `Rank ${startIndex + 1} - ${endIndex}`}
+                      <span className="text-[10px] lg:text-[11px] font-black text-amber-400 uppercase tracking-tight whitespace-nowrap">
+                        {language === 'it' ? `Pos. ${startIndex + 1}-${endIndex}` : `Rank ${startIndex + 1}-${endIndex}`}
                       </span>
                       <span className="text-[9px] font-semibold text-slate-400 whitespace-nowrap">
-                        {language === 'it' ? `su ${entries.length} giocatori` : `of ${entries.length} players`}
+                        {language === 'it' ? `su ${entries.length}` : `of ${entries.length}`}
                       </span>
                     </div>
 
@@ -345,14 +373,16 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({ onClose, lan
                       type="button"
                       disabled={safePage >= totalPages - 1}
                       onClick={() => setCurrentPage(p => Math.min(totalPages - 1, p + 1))}
-                      className={`px-2.5 py-1.5 rounded-lg font-bold flex items-center gap-1 transition-all active:scale-95 ${
+                      className={`px-2 lg:px-2.5 py-1.5 rounded-lg font-bold flex items-center gap-1 transition-all active:scale-95 ${
                         safePage >= totalPages - 1
                           ? 'opacity-30 text-slate-500 cursor-not-allowed bg-slate-800/30'
                           : 'bg-amber-600 hover:bg-amber-500 text-white shadow-[0_0_10px_rgba(217,119,6,0.35)]'
                       }`}
                       title={language === 'it' ? 'Visualizza i successivi 10' : 'View next 10'}
                     >
-                      <span className="text-[11px] whitespace-nowrap">{language === 'it' ? 'Successivi 10' : 'Next 10'}</span>
+                      <span className="text-[10px] lg:text-[11px] whitespace-nowrap">
+                        <span className="hidden xl:inline">{language === 'it' ? 'Successivi ' : 'Next '}</span>10
+                      </span>
                       <span className="text-xs">▶</span>
                     </button>
                   </div>
@@ -435,6 +465,8 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({ onClose, lan
                               pente_extreme: 30,
                               domineering_extreme: 30,
                               stratego_master: 30,
+                              quarto_hard: 20,
+                              pylos_hard: 20,
                             };
                             let localBadgeSum = 0;
                             stats?.badges?.forEach((b: any) => {
@@ -459,7 +491,7 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({ onClose, lan
                                     </div>
                                     <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-1.5 flex flex-col items-center justify-center">
                                         <span className="text-[8px] font-black text-emerald-500 uppercase tracking-widest mb-0.5">{language === 'it' ? 'Spesi' : 'Spent'}</span>
-                                        <span className="text-sm font-black text-emerald-400">{Array.from(new Set(stats.unlockedModes || [])).filter(m => !["dominio", "pente", "amazons", "corsa", "domineering", "abalone", "hex", "orbito", "chain_triangle", "yinsh", "baduk", "onitama", "shobu"].includes(m) && !(stats.freeUnlockedModes && stats.freeUnlockedModes.includes(m))).length * 50}</span>
+                                        <span className="text-sm font-black text-emerald-400">{Array.from(new Set(stats.unlockedModes || [])).filter(m => !["dominio", "pente", "amazons", "corsa", "domineering", "abalone", "hex", "orbito", "chain_triangle", "yinsh", "baduk", "onitama", "shobu", "quarto", "pylos", "stratego"].includes(m) && !(stats.freeUnlockedModes && stats.freeUnlockedModes.includes(m))).length * 50}</span>
                                     </div>
                                     <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-1.5 flex flex-col items-center justify-center">
                                         <span className="text-[8px] font-black text-blue-500 uppercase tracking-widest mb-0.5">Wall Go</span>
@@ -516,6 +548,14 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({ onClose, lan
                             <span className="text-[8px] font-black text-emerald-500 uppercase tracking-widest mb-0.5">Baduk</span>
                             <span className="text-sm font-black text-emerald-400">{((stats as any).totalBadukScore || 0).toFixed(1)}</span>
                         </div>
+                        <div className="bg-amber-600/10 border border-amber-600/20 rounded-lg p-1.5 flex flex-col items-center justify-center">
+                            <span className="text-[8px] font-black text-amber-500 uppercase tracking-widest mb-0.5">Quarto</span>
+                            <span className="text-sm font-black text-amber-400">{((stats as any).totalQuartoScore || 0).toFixed(1)}</span>
+                        </div>
+                        <div className="bg-sky-600/10 border border-sky-600/20 rounded-lg p-1.5 flex flex-col items-center justify-center">
+                            <span className="text-[8px] font-black text-sky-400 uppercase tracking-widest mb-0.5">Pylos</span>
+                            <span className="text-sm font-black text-sky-300">{((stats as any).totalPylosScore || 0).toFixed(1)}</span>
+                        </div>
                         <div className="bg-red-800/10 border border-red-800/20 rounded-lg p-1.5 flex flex-col items-center justify-center">
                             <span className="text-[8px] font-black text-red-500 uppercase tracking-widest mb-0.5">Stratego</span>
                             <span className="text-sm font-black text-red-400">{((stats as any).totalStrategoScore || 0).toFixed(1)}</span>
@@ -554,6 +594,54 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({ onClose, lan
                         { id: 'yinsh_master', icon: '💍', name: (t as any).badgeYinshMaster || "Signore degli Anelli", desc: (t as any).badgeYinshMasterDesc || "Vinci una partita a livello Medio o Difficile in modalità YINSH" },
                         { id: 'maestro', icon: '🍡', name: (t as any).badgeMaster || "Maestro Dango", desc: (t as any).badgeMasterDesc || "Vinci una partita a livello Dango" },
                         { id: 'baduk_extreme', icon: '☯️', name: language === "it" ? "Maestro Divino" : "Divine Master", desc: language === "it" ? "Vinci una partita a livello Estrema in modalità Baduk/Go" : "Win a game on Extreme difficulty in Baduk/Go mode" },
+                        {
+                            id: 'quarto_hard',
+                            icon: '🧩',
+                            name:
+                                language === "it"
+                                    ? "Maestro Quarto"
+                                    : language === "fr"
+                                      ? "Maître Quarto"
+                                      : language === "de"
+                                        ? "Quarto-Meister"
+                                        : language === "es"
+                                          ? "Maestro Quarto"
+                                          : "Quarto Master",
+                            desc:
+                                language === "it"
+                                    ? "Vinci una partita a livello Difficile o superiore in Quarto"
+                                    : language === "fr"
+                                      ? "Gagnez une partie en difficulté Difficile ou supérieure à Quarto"
+                                      : language === "de"
+                                        ? "Gewinne eine Partie Quarto auf Schwierigkeitsgrad Schwer oder höher"
+                                        : language === "es"
+                                          ? "Gana una partida en dificultad Difícil o superior en Quarto"
+                                          : "Win a game on Hard difficulty or higher in Quarto"
+                        },
+                        {
+                            id: 'pylos_hard',
+                            icon: '🔺',
+                            name:
+                                language === "it"
+                                    ? "Maestro Pylos"
+                                    : language === "fr"
+                                      ? "Maître Pylos"
+                                      : language === "de"
+                                        ? "Pylos-Meister"
+                                        : language === "es"
+                                          ? "Maestro Pylos"
+                                          : "Pylos Master",
+                            desc:
+                                language === "it"
+                                    ? "Vinci una partita a livello Difficile o superiore in Pylos"
+                                    : language === "fr"
+                                      ? "Gagnez une partie en difficulté Difficile ou supérieure à Pylos"
+                                      : language === "de"
+                                        ? "Gewinne eine Partie Pylos auf Schwierigkeitsgrad Schwer oder höher"
+                                        : language === "es"
+                                          ? "Gana una partida en dificultad Difícil o superior en Pylos"
+                                          : "Win a game on Hard difficulty or higher in Pylos"
+                        },
                         { id: 'stratego_master', icon: '🚩', name: language === "it" ? "Generale Supremo" : "Supreme General", desc: language === "it" ? "Vinci una partita a livello Difficile o superiore in Stratego" : "Win a game on Hard difficulty or higher in Stratego" }
                     ].map(badge => {
                         const unlocked = stats.badges?.find(b => typeof b === 'string' ? b === badge.id : b.id === badge.id);

@@ -2,9 +2,9 @@
 export type PlayerId = 1 | 2 | 3 | 4;
 export type Difficulty = 'facile' | 'normale' | 'difficile' | 'estrema' | 'maestro';
 export type Language = 'en' | 'fr' | 'de' | 'it' | 'es';
-export type BoardTheme = 'neon' | 'islands' | 'desert' | 'hourglass' | 'bridge' | 'hammer' | 'arena' | 'corsa' | 'amazons-8' | 'amazons-10' | 'amazons-6' | 'domineering' | 'abalone' | 'abalone-daisy' | 'abalone-dutch' | 'abalone-domination' | 'abalone-infiltration' | 'abalone-wall' | 'hex' | 'orbito' | 'pente' | 'chain_triangle' | 'shobu' | 'shobu-scacchiera' | 'yinsh' | 'onitama-dark' | 'onitama-light' | 'baduk-9' | 'baduk-13' | 'baduk-19' | 'stratego-classic' | 'stratego-dark';
+export type BoardTheme = 'neon' | 'islands' | 'desert' | 'hourglass' | 'bridge' | 'hammer' | 'arena' | 'corsa' | 'amazons-8' | 'amazons-10' | 'amazons-6' | 'domineering' | 'abalone' | 'abalone-daisy' | 'abalone-dutch' | 'abalone-domination' | 'abalone-infiltration' | 'abalone-wall' | 'hex' | 'orbito' | 'pente' | 'chain_triangle' | 'shobu' | 'shobu-scacchiera' | 'yinsh' | 'onitama-dark' | 'onitama-light' | 'baduk-9' | 'baduk-13' | 'baduk-19' | 'stratego-classic' | 'stratego-dark' | 'quarto' | 'pylos';
 export type StartingPlayerPreference = 'human' | 'ai' | 'random';
-export type GameMode = 'dominio' | 'corsa' | 'amazons' | 'domineering' | 'abalone' | 'hex' | 'orbito' | 'pente' | 'chain_triangle' | 'shobu' | 'yinsh' | 'onitama' | 'baduk' | 'stratego';
+export type GameMode = 'dominio' | 'corsa' | 'amazons' | 'domineering' | 'abalone' | 'hex' | 'orbito' | 'pente' | 'chain_triangle' | 'shobu' | 'yinsh' | 'onitama' | 'baduk' | 'stratego' | 'quarto' | 'pylos';
 
 export interface Point {
   r: number;
@@ -79,11 +79,15 @@ export interface PlayerStats {
   totalOnitamaScore?: number;
   totalBadukScore?: number;
   totalStrategoScore?: number;
+  totalQuartoScore?: number;
+  totalPylosScore?: number;
   yinshStats?: any;
   shobuStats?: any;
   onitamaStats?: any;
   badukStats?: any;
   strategoStats?: any;
+  quartoStats?: any;
+  pylosStats?: any;
   unlockedModes?: GameMode[];
   freeUnlockedModes?: GameMode[];
   lastGamePlayedAt?: string;
@@ -154,6 +158,8 @@ export interface YinshState {
 }
 
 export interface GameState {
+  quartoState?: import('./utils/quartoLogic').QuartoState;
+  pylosState?: import('./utils/pylosLogic').PylosState;
   onitamaState?: OnitamaState;
   yinshState?: YinshState;
   shobuState?: {
