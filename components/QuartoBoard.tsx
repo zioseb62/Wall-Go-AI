@@ -217,7 +217,7 @@ export const Quarto3DPiece: React.FC<{
   const isDropping = dropOffsetY < -1.5;
   const shadowScale = isDropping ? Math.max(0.35, 1 - Math.abs(dropOffsetY) / 260) : 1;
   const shadowOpacity = isDropping ? Math.max(0.15, 0.48 * shadowScale) : 0.48;
-  const resolvedOpacity = opacity !== undefined ? opacity : isGhost ? 0.58 : 1;
+  const resolvedOpacity = typeof opacity === 'number' && Number.isFinite(opacity) ? opacity : isGhost ? 0.58 : 1;
 
   return (
     <g
@@ -1055,6 +1055,7 @@ const QuartoBoard: React.FC<QuartoBoardProps> = ({
           if (!dragStateRef.current.active) return;
           const dx = e.clientX - dragStateRef.current.lastX;
           const dy = e.clientY - dragStateRef.current.lastY;
+          if (!Number.isFinite(dx) || !Number.isFinite(dy)) return;
           dragStateRef.current.lastX = e.clientX;
           dragStateRef.current.lastY = e.clientY;
           dragStateRef.current.totalDist += Math.hypot(dx, dy);
@@ -1091,7 +1092,9 @@ const QuartoBoard: React.FC<QuartoBoardProps> = ({
           }
         }}
         style={{ touchAction: 'none' }}
-        className={`relative w-full flex-1 min-h-0 flex items-center justify-center ${
+        className={`relative w-full flex-1 min-h-0 flex ${
+          quartoState.winner ? 'items-start pt-2' : 'items-center'
+        } justify-center ${
           isDragging3D ? 'cursor-grabbing' : 'cursor-grab'
         }`}
       >

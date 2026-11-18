@@ -126,9 +126,9 @@ export const PylosBoard: React.FC<PylosBoardProps> = ({
   boardStyle = 'classic',
 }) => {
   const isNeon = boardStyle === 'neon';
-  // Orbital 3D camera controls matching QuartoBoard
-  const [boardYaw, setBoardYaw] = useState<number>(-Math.PI / 4);
-  const [boardPitch, setBoardPitch] = useState<number>(0.64);
+  // Orbital 3D camera controls matching the desired starting orientation and inclination
+  const [boardYaw, setBoardYaw] = useState<number>(-0.30);
+  const [boardPitch, setBoardPitch] = useState<number>(0.70);
   const [isDragging3D, setIsDragging3D] = useState<boolean>(false);
   const [selectedRaiseFrom, setSelectedRaiseFrom] = useState<PylosCoord | null>(null);
   const [hoveredCoord, setHoveredCoord] = useState<PylosCoord | null>(null);
@@ -187,7 +187,7 @@ export const PylosBoard: React.FC<PylosBoardProps> = ({
     const startTime = performance.now();
     const durationMs = 210;
     const tick = (now: number) => {
-      const linear = Math.min(1, (now - startTime) / durationMs);
+      const linear = Math.min(1, Math.max(0, (now - startTime) / durationMs));
       const eased = 1 - Math.pow(1 - linear, 3);
       setSelectLiftProgress(eased);
       if (linear < 1) {
@@ -233,7 +233,7 @@ export const PylosBoard: React.FC<PylosBoardProps> = ({
       let rafId = 0;
       const startTime = performance.now();
       const tick = (now: number) => {
-        const linear = Math.min(1, (now - startTime) / durationMs);
+        const linear = Math.min(1, Math.max(0, (now - startTime) / durationMs));
         if (isWinningApex) {
           setWinDropProgress(1 - Math.pow(1 - linear, 3));
         }
@@ -488,6 +488,7 @@ export const PylosBoard: React.FC<PylosBoardProps> = ({
         grainPaths,
         thickness: baseThickness,
         svgHeight,
+        minSlabY: topPad,
       },
       slotsByLevel: byLevel,
       allSlots,
@@ -645,6 +646,20 @@ export const PylosBoard: React.FC<PylosBoardProps> = ({
     }
     return n;
   }, [pylosState.levels]);
+
+  const endGameViewBoxTop = useMemo(() => {
+    if (!pylosState.winner) return 0;
+    let minY = boardGeometry.minSlabY;
+    for (const s of allSlots) {
+      if (pylosState.levels[s.level][s.r][s.c] !== null) {
+        const topEdge = s.y - s.radius;
+        if (topEdge < minY) minY = topEdge;
+      }
+    }
+    return Math.max(0, Math.round(minY - 12));
+  }, [pylosState.winner, pylosState.levels, allSlots, boardGeometry.minSlabY]);
+
+  const activeViewBoxHeight = Math.max(240, boardGeometry.svgHeight - endGameViewBoxTop);
 
   return (
     <div
@@ -876,6 +891,7 @@ export const PylosBoard: React.FC<PylosBoardProps> = ({
 
             const dx = moveEv.clientX - dragStateRef.current.lastX;
             const dy = moveEv.clientY - dragStateRef.current.lastY;
+            if (!Number.isFinite(dx) || !Number.isFinite(dy)) return;
             dragStateRef.current.lastX = moveEv.clientX;
             dragStateRef.current.lastY = moveEv.clientY;
             dragStateRef.current.totalDist += Math.hypot(dx, dy);
@@ -926,14 +942,16 @@ export const PylosBoard: React.FC<PylosBoardProps> = ({
           }
         }}
         style={{ touchAction: 'none' }}
-        className={`relative w-full flex-1 min-h-0 flex items-center justify-center select-none ${
+        className={`relative w-full flex-1 min-h-0 flex ${
+          pylosState.winner ? 'items-start pt-1' : 'items-center'
+        } justify-center select-none ${
           isDragging3D ? 'cursor-grabbing' : 'cursor-grab'
         }`}
       >
         <svg
-          viewBox={`0 0 460 ${boardGeometry.svgHeight}`}
+          viewBox={`0 ${endGameViewBoxTop} 460 ${activeViewBoxHeight}`}
           className="w-full h-full max-h-full overflow-visible select-none"
-          preserveAspectRatio="xMidYMid meet"
+          preserveAspectRatio={pylosState.winner ? 'xMidYMin meet' : 'xMidYMid meet'}
           onDragStart={(e) => e.preventDefault()}
         >
           <defs>
@@ -969,6 +987,9 @@ export const PylosBoard: React.FC<PylosBoardProps> = ({
             </filter>
             <filter id="pylos3d-saddle-soft" x="-40%" y="-40%" width="180%" height="180%">
               <feGaussianBlur stdDeviation="1.5" />
+            </filter>
+            <filter id="pylos3d-raisable-glow" x="-60%" y="-60%" width="220%" height="220%">
+              <feGaussianBlur stdDeviation="3.8" />
             </filter>
 
             <linearGradient id="pylos-wood-top" x1="12%" y1="6%" x2="88%" y2="94%">
@@ -1181,18 +1202,21 @@ export const PylosBoard: React.FC<PylosBoardProps> = ({
               let heightRatio = 0;
               let shadowOpacity = 1;
               if (isDepartingFrom && activeAnim) {
-                heightRatio = Math.min(1, 0.25 + activeAnim.progress * 0.9);
-                shadowOpacity = Math.max(0, 1 - activeAnim.progress * 2.6);
+                const p = Math.min(1, Math.max(0, Number.isFinite(activeAnim.progress) ? activeAnim.progress : 0));
+                heightRatio = Math.min(1, 0.25 + p * 0.9);
+                shadowOpacity = Math.max(0, 1 - p * 2.6);
               } else if (isDropTarget && activeAnim) {
-                const eased = 1 - Math.pow(1 - activeAnim.progress, 3);
+                const p = Math.min(1, Math.max(0, Number.isFinite(activeAnim.progress) ? activeAnim.progress : 0));
+                const eased = 1 - Math.pow(1 - p, 3);
                 heightRatio = 1 - eased;
                 shadowOpacity = 0.24 + 0.76 * eased;
               } else if (isSelected) {
-                heightRatio = 0.22 * selectLiftProgress;
-                shadowOpacity = 1 - 0.38 * selectLiftProgress;
+                const safeLift = Number.isFinite(selectLiftProgress) ? Math.min(1, Math.max(0, selectLiftProgress)) : 0;
+                heightRatio = 0.22 * safeLift;
+                shadowOpacity = 1 - 0.38 * safeLift;
               }
 
-              if (shadowOpacity <= 0.01) return null;
+              if (!Number.isFinite(shadowOpacity) || shadowOpacity <= 0.01) return null;
               const shadowScale = 1 - heightRatio * 0.28;
               const shiftX = (17.5 + heightRatio * 14) * slot.scale;
               const shiftY = (9.5 + heightRatio * 10) * slot.scale;
@@ -1218,7 +1242,7 @@ export const PylosBoard: React.FC<PylosBoardProps> = ({
                       rx={SOCKET_BOWL_RX * 1.0 * slot.scale}
                       ry={socketInnerRy * 1.0 * slot.scale}
                       fill="url(#pylos-pocket-ao)"
-                      opacity={Math.max(0, 1 - heightRatio * 2.2)}
+                      opacity={Math.max(0, Math.min(1, 1 - heightRatio * 2.2))}
                     />
                   )}
                 </g>
@@ -1253,6 +1277,7 @@ export const PylosBoard: React.FC<PylosBoardProps> = ({
                 const isHovered = sameCoord(hoveredCoord, coord);
                 const canRecover = isRecoverable(coord);
                 const canRaise = occupant === currentPlayerId && isRaisable(coord);
+                const isRaisableHint = canRaise && !selectedRaiseFrom && !activeAnim;
                 const isBonus = isTriggeredCell(coord);
                 const isLast = sameCoord(pylosState.lastMove?.to, coord);
                 const isWinningApex =
@@ -1269,7 +1294,7 @@ export const PylosBoard: React.FC<PylosBoardProps> = ({
                 let animProgress = 1;
 
                 if (isAnimatingThisTo && activeAnim) {
-                  const linear = activeAnim.progress;
+                  const linear = Math.min(1, Math.max(0, Number.isFinite(activeAnim.progress) ? activeAnim.progress : 0));
                   animProgress = linear;
                   if (activeAnim.kind === 'place') {
                     const eased = 1 - Math.pow(1 - linear, 3);
@@ -1295,16 +1320,25 @@ export const PylosBoard: React.FC<PylosBoardProps> = ({
                     drawRadius = fromPt.radius + (slot.radius - fromPt.radius) * easeInOut;
                   }
                 } else if (isSelected) {
-                  drawY = slot.y - 24 * slot.scale * selectLiftProgress;
+                  const safeLift = Number.isFinite(selectLiftProgress) ? Math.min(1, Math.max(0, selectLiftProgress)) : 0;
+                  drawY = slot.y - 24 * slot.scale * safeLift;
                 }
+
+                const safeDrawX = Number.isFinite(drawX) ? drawX : slot.x;
+                const safeDrawY = Number.isFinite(drawY) ? drawY : slot.y;
+                const safeDrawRadius = Number.isFinite(drawRadius) ? drawRadius : slot.radius;
+                drawX = safeDrawX;
+                drawY = safeDrawY;
+                drawRadius = safeDrawRadius;
 
                 const isSettled = !isAnimatingThisTo && (!isSelected || selectLiftProgress < 0.08);
                 const isSeatedInSocket = level === 0 && isSettled;
-                const shadowOpacity = isAnimatingThisTo
-                  ? Math.pow(animProgress, 1.8)
+                const safeShadowOpacity = isAnimatingThisTo
+                  ? Math.pow(Math.max(0, animProgress), 1.8)
                   : isSelected
-                    ? 1 - 0.45 * selectLiftProgress
+                    ? 1 - 0.45 * (Number.isFinite(selectLiftProgress) ? Math.min(1, Math.max(0, selectLiftProgress)) : 0)
                     : 1;
+                const shadowOpacity = Number.isFinite(safeShadowOpacity) ? Math.min(1, Math.max(0, safeShadowOpacity)) : 1;
 
                 const rxRing = SOCKET_RING_RX * slot.scale;
                 const ryRing = socketRy * slot.scale;
@@ -1365,6 +1399,43 @@ export const PylosBoard: React.FC<PylosBoardProps> = ({
                           fill="url(#pylos-saddle-ao)"
                           filter="url(#pylos3d-saddle-soft)"
                         />
+                      </g>
+                    )}
+
+                    {/* Intermittent Glow Aura for Spheres That Can Be Picked Up and Moved */}
+                    {isRaisableHint && (
+                      <g className="pointer-events-none">
+                        <circle
+                          cx={drawX}
+                          cy={drawY}
+                          r={drawRadius + 2.6 * slot.scale}
+                          fill="none"
+                          stroke="#fde047"
+                          strokeWidth={4.8 * slot.scale}
+                          filter="url(#pylos3d-raisable-glow)"
+                        >
+                          <animate
+                            attributeName="opacity"
+                            values="0.18;0.95;0.18"
+                            dur="1.4s"
+                            repeatCount="indefinite"
+                          />
+                        </circle>
+                        <circle
+                          cx={drawX}
+                          cy={drawY}
+                          r={drawRadius + 2.2 * slot.scale}
+                          fill="none"
+                          stroke="#fef08a"
+                          strokeWidth={1.6 * slot.scale}
+                        >
+                          <animate
+                            attributeName="opacity"
+                            values="0.15;0.85;0.15"
+                            dur="1.4s"
+                            repeatCount="indefinite"
+                          />
+                        </circle>
                       </g>
                     )}
 
@@ -1455,18 +1526,43 @@ export const PylosBoard: React.FC<PylosBoardProps> = ({
                             ? '#fef08a'
                             : canRecover
                               ? '#86efac'
-                              : isLast && !isAnimatingThisTo
-                                ? '#38bdf8'
-                                : isNeon
-                                  ? (occupant === 1 ? NEON_BLUE_PALETTE.rimStroke : NEON_RED_PALETTE.rimStroke)
-                                  : occupant === 1
-                                    ? LIGHT_PALETTE.rimStroke
-                                    : DARK_PALETTE.rimStroke
+                              : isRaisableHint
+                                ? '#fde047'
+                                : isLast && !isAnimatingThisTo
+                                  ? '#38bdf8'
+                                  : isNeon
+                                    ? (occupant === 1 ? NEON_BLUE_PALETTE.rimStroke : NEON_RED_PALETTE.rimStroke)
+                                    : occupant === 1
+                                      ? LIGHT_PALETTE.rimStroke
+                                      : DARK_PALETTE.rimStroke
                         }
-                        strokeOpacity={isSelected || canRecover || (isLast && !isAnimatingThisTo) ? 1 : (isNeon ? 0.48 : 0.35)}
-                        strokeWidth={isSelected || canRecover || (isLast && !isAnimatingThisTo) ? 2 : 0.55}
+                        strokeOpacity={
+                          isSelected || canRecover || (isLast && !isAnimatingThisTo)
+                            ? 1
+                            : isRaisableHint
+                              ? 0.9
+                              : isNeon
+                                ? 0.48
+                                : 0.35
+                        }
+                        strokeWidth={
+                          isSelected || canRecover || (isLast && !isAnimatingThisTo)
+                            ? 2
+                            : isRaisableHint
+                              ? 2.1
+                              : 0.55
+                        }
                         className="pointer-events-none"
-                      />
+                      >
+                        {isRaisableHint && (
+                          <animate
+                            attributeName="stroke-opacity"
+                            values="0.22;1;0.22"
+                            dur="1.4s"
+                            repeatCount="indefinite"
+                          />
+                        )}
+                      </circle>
                     </g>
 
                     {/* Front Concave Socket Lip Wrapping Over Seated Sphere Base */}
